@@ -9,17 +9,25 @@
   "scripts": {
     "build": "tsc",
     "start": "node build/index.js",
-    "dev": "tsc && node build/index.js"
+    "dev": "tsc && node build/index.js",
+    "dev:http": "tsc && MCP_TRANSPORT=http node build/index.js"
   },
-  "keywords": ["mcp", "tastytrade", "trading", "market-data"],
+  "keywords": [
+    "mcp",
+    "tastytrade",
+    "trading",
+    "market-data"
+  ],
   "author": "",
   "license": "MIT",
   "description": "MCP server for TastyTrade brokerage API integration",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@tastytrade/api": "^7.0.1",
+    "@types/express": "^5.0.6",
     "@types/node": "^25.3.0",
     "@types/ws": "^8.18.1",
+    "express": "^5.2.1",
     "typescript": "^5.9.3",
     "ws": "^8.19.0",
     "zod": "^4.3.6"

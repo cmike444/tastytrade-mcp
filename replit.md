@@ -1,7 +1,7 @@
 # TastyTrade MCP Server
 
 ## Overview
-A Model Context Protocol (MCP) server that integrates with TastyTrade brokerage accounts using OAuth authentication. Exposes all TastyTrade API endpoints as callable MCP tools. Built with TypeScript and uses the official TastyTrade JavaScript SDK (`@tastytrade/api`) and DXLink for market data.
+A Model Context Protocol (MCP) server that integrates with TastyTrade brokerage accounts using OAuth authentication. Exposes all TastyTrade API endpoints as callable MCP tools. Built with TypeScript and uses the official TastyTrade JavaScript SDK (`@tastytrade/api`) and DXLink for market data. Supports both stdio (local) and Streamable HTTP (cloud) transports.
 
 ## Architecture
 
@@ -10,12 +10,13 @@ A Model Context Protocol (MCP) server that integrates with TastyTrade brokerage 
 - **Language**: TypeScript (ES2022, Node16 modules)
 - **MCP SDK**: `@modelcontextprotocol/sdk` - Model Context Protocol server implementation
 - **TastyTrade SDK**: `@tastytrade/api` v7 - Official TastyTrade JavaScript SDK with OAuth support
-- **Transport**: stdio (standard MCP transport for local/CLI use)
+- **HTTP Framework**: Express.js - Used for Streamable HTTP transport
+- **Transports**: stdio (local/CLI) and Streamable HTTP (cloud/remote)
 
 ### Project Structure
 ```
 src/
-  index.ts                    - Main entry point, creates MCP server and registers all tools
+  index.ts                    - Main entry point, dual transport (stdio + HTTP), bearer auth
   tastytrade-client.ts        - TastyTrade client wrapper with OAuth authentication
   tools/
     auth-tools.ts             - Authentication tools (OAuth login, status, disconnect)
@@ -31,11 +32,18 @@ src/
 
 ### Key Design Decisions
 - **OAuth 2.0**: Uses TastyTrade's OAuth with client secret + refresh token (SDK v7 pattern)
-- **stdio transport**: MCP server communicates via stdin/stdout JSON-RPC, suitable for use with Claude Desktop, MCP Inspector, etc.
+- **Dual transport**: Supports both stdio (for local CLI use) and Streamable HTTP (for cloud deployment)
+- **Bearer token auth**: HTTP endpoint protected by MCP_BEARER_TOKEN environment variable
+- **Session management**: HTTP transport uses stateful sessions with UUID-based session IDs
 - **WebSocket polyfill**: Uses `ws` package to polyfill WebSocket for Node.js (required by TastyTrade SDK's account streamer and DXLink)
 - **DXLink integration**: Market data (quotes, candles, Greeks) is fetched via TastyTrade's QuoteStreamer which wraps DXLink
 
-### Available MCP Tools (60+)
+### Environment Variables
+- **MCP_TRANSPORT**: Set to `http` for cloud mode, defaults to `stdio` for local mode
+- **MCP_BEARER_TOKEN**: Secret token to protect the HTTP endpoint (required for cloud deployment)
+- **PORT**: HTTP server port (defaults to 5000)
+
+### Available MCP Tools (73)
 - **Auth**: authenticate_oauth, check_auth_status, disconnect
 - **Accounts**: get_customer_accounts, get_customer_resource, get_full_account_resource, get_account_status
 - **Balances/Positions**: get_account_balances, get_positions, get_balance_snapshots
@@ -50,19 +58,18 @@ src/
 
 ### Build and Run
 ```bash
-npm run build   # Compile TypeScript
-npm start       # Run the MCP server
-npm run dev     # Build and run in one step
+npm run build      # Compile TypeScript
+npm start          # Run the MCP server (stdio mode)
+npm run dev        # Build and run in stdio mode
+npm run dev:http   # Build and run in HTTP mode on port 5000
 ```
 
-### Connecting with MCP Inspector
+### Local Usage (stdio)
 ```bash
+# MCP Inspector
 npx @modelcontextprotocol/inspector node build/index.js
-```
 
-### Claude Desktop Configuration
-Add to your Claude Desktop config:
-```json
+# Claude Desktop / ChatGPT Desktop config
 {
   "mcpServers": {
     "tastytrade": {
@@ -73,7 +80,14 @@ Add to your Claude Desktop config:
 }
 ```
 
-### Authentication
+### Cloud Usage (HTTP)
+Set `MCP_TRANSPORT=http` and `MCP_BEARER_TOKEN=your-secret-token`, then connect MCP clients to:
+```
+https://your-replit-url/mcp
+```
+Health check available at `/health`.
+
+### TastyTrade Authentication
 Before using any tools, authenticate with:
 ```
 authenticate_oauth({
@@ -84,5 +98,12 @@ authenticate_oauth({
 })
 ```
 
+## Deployment
+- **Target**: VM (always-on, stateful sessions)
+- **Build**: `npm run build`
+- **Run**: `MCP_TRANSPORT=http node build/index.js`
+- **Port**: 5000
+
 ## Recent Changes
-- 2026-02-20: Initial implementation with full TastyTrade API coverage
+- 2026-02-20: Added dual transport (stdio + Streamable HTTP) with bearer token auth
+- 2026-02-20: Initial implementation with full TastyTrade API coverage (73 tools)

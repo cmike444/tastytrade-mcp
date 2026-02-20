@@ -21,13 +21,23 @@ args = "MCP Server"
 name = "MCP Server"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "webview"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd /home/runner/workspace && npm run dev"
+args = "cd /home/runner/workspace && npm run dev:http"
+waitForPort = 5000
 
-[workflows.workflow.metadata]
-outputType = "console"
+[[ports]]
+localPort = 5000
+externalPort = 80
 
 [[ports]]
 localPort = 6274
 externalPort = 80
+
+[deployment]
+deploymentTarget = "vm"
+run = ["bash", "-c", "MCP_TRANSPORT=http node build/index.js"]
+build = ["npm", "run", "build"]
