@@ -27,3 +27,7 @@ args = "cd /home/runner/workspace && npm run dev"
 
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[ports]]
+localPort = 6274
+externalPort = 80
