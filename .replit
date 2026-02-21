@@ -37,3 +37,4 @@ externalPort = 80
 deploymentTarget = "vm"
 run = ["bash", "-c", "MCP_TRANSPORT=http node build/index.js"]
 build = ["npm", "run", "build"]
+publicDir = "build"
