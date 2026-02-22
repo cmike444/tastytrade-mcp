@@ -171,42 +171,53 @@ async function startHttpServer() {
   });
 
   app.post("/oauth/authorize/submit", (req, res) => {
-    const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope, token } =
-      req.body as Record<string, string>;
+    try {
+      console.error(`[OAuth] POST /oauth/authorize/submit body keys:`, Object.keys(req.body || {}));
+      const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope, token } =
+        req.body as Record<string, string>;
 
-    const submitClient = getClient(client_id);
-    if (!submitClient || !isClientRedirectValid(submitClient, redirect_uri)) {
-      res.status(400).json({ error: "invalid_request", error_description: "Invalid client or redirect URI" });
-      return;
+      console.error(`[OAuth] Submit: client_id=${client_id} redirect_uri=${redirect_uri}`);
+
+      const submitClient = getClient(client_id);
+      if (!submitClient || !isClientRedirectValid(submitClient, redirect_uri)) {
+        console.error(`[OAuth] Submit error: invalid client or redirect. client=${!!submitClient}`);
+        res.status(400).json({ error: "invalid_request", error_description: "Invalid client or redirect URI" });
+        return;
+      }
+
+      if (!BEARER_TOKEN || token !== BEARER_TOKEN) {
+        console.error(`[OAuth] Submit: invalid bearer token, re-rendering auth page`);
+        res.type("html").send(
+          renderAuthorizationPage({
+            client_id,
+            redirect_uri,
+            state: state || "",
+            code_challenge,
+            code_challenge_method: code_challenge_method || "S256",
+            scope: scope || "mcp:tools",
+            client_name: submitClient.client_name,
+          })
+        );
+        return;
+      }
+
+      const code = createAuthorizationCode({
+        client_id,
+        redirect_uri,
+        code_challenge,
+        code_challenge_method: code_challenge_method || "S256",
+        scope: scope || "mcp:tools",
+      });
+
+      console.error(`[OAuth] Submit: code created, redirecting to ${redirect_uri}`);
+      const redirectUrl = new URL(redirect_uri);
+      redirectUrl.searchParams.set("code", code);
+      if (state) redirectUrl.searchParams.set("state", state);
+      res.redirect(302, redirectUrl.toString());
+    } catch (err) {
+      console.error(`[OAuth] Submit crash:`, err);
+      res.status(500).json({ error: "server_error", error_description: "Internal error during authorization" });
     }
-
-    if (!BEARER_TOKEN || token !== BEARER_TOKEN) {
-      res.type("html").send(
-        renderAuthorizationPage({
-          client_id,
-          redirect_uri,
-          state: state || "",
-          code_challenge,
-          code_challenge_method: code_challenge_method || "S256",
-          scope: scope || "mcp:tools",
-          client_name: submitClient.client_name,
-        })
-      );
-      return;
-    }
-
-    const code = createAuthorizationCode({
-      client_id,
-      redirect_uri,
-      code_challenge,
-      code_challenge_method: code_challenge_method || "S256",
-      scope: scope || "mcp:tools",
-    });
-
-    const url = new URL(redirect_uri);
-    url.searchParams.set("code", code);
-    if (state) url.searchParams.set("state", state);
-    res.redirect(url.toString());
   });
 
   app.post("/oauth/token", (req, res) => {
@@ -309,6 +320,13 @@ async function startHttpServer() {
     res.status(200).end();
   });
 
+  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error("[Express] Unhandled error:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "server_error" });
+    }
+  });
+
   const port = parseInt(process.env.PORT || "5000", 10);
   app.listen(port, "0.0.0.0", () => {
     console.error(`TastyTrade MCP Server running on http://0.0.0.0:${port}/mcp`);
@@ -336,6 +354,14 @@ async function main() {
     await startStdioServer();
   }
 }
+
+process.on("uncaughtException", (err) => {
+  console.error("[Process] Uncaught exception:", err);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[Process] Unhandled rejection:", reason);
+});
 
 main().catch((error) => {
   console.error("Fatal error:", error);
