@@ -2,11 +2,15 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
 
+const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
+const DESTRUCTIVE = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false } as const;
+
 export function registerWatchlistTools(server: McpServer) {
   server.tool(
     "get_all_watchlists",
     "Get all user watchlists.",
     {},
+    READ_ONLY,
     async () => {
       try {
         const watchlists = await getClient().watchlistsService.getAllWatchlists();
@@ -23,6 +27,7 @@ export function registerWatchlistTools(server: McpServer) {
     {
       watchlistName: z.string().describe("The name of the watchlist"),
     },
+    READ_ONLY,
     async ({ watchlistName }) => {
       try {
         const watchlist = await getClient().watchlistsService.getSingleWatchlist(watchlistName);
@@ -39,6 +44,7 @@ export function registerWatchlistTools(server: McpServer) {
     {
       watchlistJson: z.string().describe("JSON string of the watchlist object with name and watchlist-entries"),
     },
+    DESTRUCTIVE,
     async ({ watchlistJson }) => {
       try {
         const watchlist = JSON.parse(watchlistJson);
@@ -57,6 +63,7 @@ export function registerWatchlistTools(server: McpServer) {
       watchlistName: z.string().describe("The name of the watchlist to replace"),
       watchlistJson: z.string().describe("JSON string of the replacement watchlist object"),
     },
+    DESTRUCTIVE,
     async ({ watchlistName, watchlistJson }) => {
       try {
         const watchlist = JSON.parse(watchlistJson);
@@ -74,6 +81,7 @@ export function registerWatchlistTools(server: McpServer) {
     {
       watchlistName: z.string().describe("The name of the watchlist to delete"),
     },
+    DESTRUCTIVE,
     async ({ watchlistName }) => {
       try {
         const result = await getClient().watchlistsService.deleteWatchlist(watchlistName);
@@ -90,6 +98,7 @@ export function registerWatchlistTools(server: McpServer) {
     {
       countsOnly: z.boolean().default(false).describe("Only return counts instead of full watchlist data"),
     },
+    READ_ONLY,
     async ({ countsOnly }) => {
       try {
         const watchlists = await getClient().watchlistsService.getPublicWatchlists(countsOnly);
@@ -106,6 +115,7 @@ export function registerWatchlistTools(server: McpServer) {
     {
       watchlistName: z.string().describe("The name of the public watchlist"),
     },
+    READ_ONLY,
     async ({ watchlistName }) => {
       try {
         const watchlist = await getClient().watchlistsService.getPublicWatchlist(watchlistName);
@@ -120,6 +130,7 @@ export function registerWatchlistTools(server: McpServer) {
     "get_pairs_watchlists",
     "Get all TastyTrade pairs watchlists.",
     {},
+    READ_ONLY,
     async () => {
       try {
         const watchlists = await getClient().watchlistsService.getPairsWatchlists();
@@ -136,6 +147,7 @@ export function registerWatchlistTools(server: McpServer) {
     {
       pairsWatchlistName: z.string().describe("The name of the pairs watchlist"),
     },
+    READ_ONLY,
     async ({ pairsWatchlistName }) => {
       try {
         const watchlist = await getClient().watchlistsService.getPairsWatchlist(pairsWatchlistName);

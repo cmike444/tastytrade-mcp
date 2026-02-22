@@ -2,6 +2,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
 
+const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
+
 export function registerBalancePositionTools(server: McpServer) {
   server.tool(
     "get_account_balances",
@@ -9,6 +11,7 @@ export function registerBalancePositionTools(server: McpServer) {
     {
       accountNumber: z.string().describe("The account number to get balances for"),
     },
+    READ_ONLY,
     async ({ accountNumber }) => {
       try {
         const balances = await getClient().balancesAndPositionsService.getAccountBalanceValues(accountNumber);
@@ -27,6 +30,7 @@ export function registerBalancePositionTools(server: McpServer) {
       symbol: z.string().optional().describe("Filter positions by specific symbol"),
       underlyingSymbol: z.string().optional().describe("Filter positions by underlying symbol"),
     },
+    READ_ONLY,
     async ({ accountNumber, symbol, underlyingSymbol }) => {
       try {
         const queryParams: Record<string, any> = {};
@@ -47,6 +51,7 @@ export function registerBalancePositionTools(server: McpServer) {
       accountNumber: z.string().describe("The account number to get snapshots for"),
       timeOfDay: z.string().optional().describe("Time of day for snapshot (e.g., 'BOD' for beginning of day, 'EOD' for end of day)"),
     },
+    READ_ONLY,
     async ({ accountNumber, timeOfDay }) => {
       try {
         const queryParams: Record<string, any> = {};

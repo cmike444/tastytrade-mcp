@@ -2,6 +2,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
 
+const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
+
 export function registerTransactionTools(server: McpServer) {
   server.tool(
     "get_transactions",
@@ -17,6 +19,7 @@ export function registerTransactionTools(server: McpServer) {
       endDate: z.string().optional().describe("End date in YYYY-MM-DD format"),
       symbol: z.string().optional().describe("Filter by symbol"),
     },
+    READ_ONLY,
     async ({ accountNumber, perPage, pageOffset, sort, type, subType, startDate, endDate, symbol }) => {
       try {
         const queryParams: Record<string, any> = {};
@@ -43,6 +46,7 @@ export function registerTransactionTools(server: McpServer) {
       accountNumber: z.string().describe("The account number"),
       transactionId: z.string().describe("The transaction ID"),
     },
+    READ_ONLY,
     async ({ accountNumber, transactionId }) => {
       try {
         const transaction = await getClient().transactionsService.getTransaction(accountNumber, transactionId);
@@ -59,6 +63,7 @@ export function registerTransactionTools(server: McpServer) {
     {
       accountNumber: z.string().describe("The account number"),
     },
+    READ_ONLY,
     async ({ accountNumber }) => {
       try {
         const fees = await getClient().transactionsService.getTotalFees(accountNumber);

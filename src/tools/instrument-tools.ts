@@ -2,6 +2,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
 
+const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
+
 export function registerInstrumentTools(server: McpServer) {
   server.tool(
     "get_equity",
@@ -9,6 +11,7 @@ export function registerInstrumentTools(server: McpServer) {
     {
       symbol: z.string().describe("The equity symbol (e.g., 'AAPL', 'TSLA')"),
     },
+    READ_ONLY,
     async ({ symbol }) => {
       try {
         const equity = await getClient().instrumentsService.getSingleEquity(symbol);
@@ -26,6 +29,7 @@ export function registerInstrumentTools(server: McpServer) {
       symbols: z.array(z.string()).optional().describe("Array of equity symbols to look up"),
       lendability: z.string().optional().describe("Filter by lendability ('Easy To Borrow', 'Locate Required', 'Preborrow')"),
     },
+    READ_ONLY,
     async ({ symbols, lendability }) => {
       try {
         const queryParams: Record<string, any> = {};
@@ -46,6 +50,7 @@ export function registerInstrumentTools(server: McpServer) {
       perPage: z.number().optional().describe("Number of results per page"),
       pageOffset: z.number().optional().describe("Page offset for pagination"),
     },
+    READ_ONLY,
     async ({ perPage, pageOffset }) => {
       try {
         const queryParams: Record<string, any> = {};
@@ -67,6 +72,7 @@ export function registerInstrumentTools(server: McpServer) {
       active: z.boolean().default(true).describe("Only return active options"),
       withExpired: z.boolean().default(false).describe("Include expired options"),
     },
+    READ_ONLY,
     async ({ symbols, active, withExpired }) => {
       try {
         const options = await getClient().instrumentsService.getEquityOptions(symbols, active, withExpired);
@@ -83,6 +89,7 @@ export function registerInstrumentTools(server: McpServer) {
     {
       symbol: z.string().describe("The option symbol (OCC format)"),
     },
+    READ_ONLY,
     async ({ symbol }) => {
       try {
         const option = await getClient().instrumentsService.getSingleEquityOption(symbol);
@@ -99,6 +106,7 @@ export function registerInstrumentTools(server: McpServer) {
     {
       symbol: z.string().describe("The underlying symbol (e.g., 'AAPL')"),
     },
+    READ_ONLY,
     async ({ symbol }) => {
       try {
         const chain = await getClient().instrumentsService.getOptionChain(symbol);
@@ -115,6 +123,7 @@ export function registerInstrumentTools(server: McpServer) {
     {
       symbol: z.string().describe("The underlying symbol (e.g., 'AAPL')"),
     },
+    READ_ONLY,
     async ({ symbol }) => {
       try {
         const chain = await getClient().instrumentsService.getNestedOptionChain(symbol);
@@ -131,6 +140,7 @@ export function registerInstrumentTools(server: McpServer) {
     {
       symbol: z.string().describe("The underlying symbol (e.g., 'AAPL')"),
     },
+    READ_ONLY,
     async ({ symbol }) => {
       try {
         const chain = await getClient().instrumentsService.getCompactOptionChain(symbol);
@@ -148,6 +158,7 @@ export function registerInstrumentTools(server: McpServer) {
       symbols: z.array(z.string()).optional().describe("Array of futures symbols to look up"),
       productCode: z.string().optional().describe("Product code to filter by (e.g., 'ES')"),
     },
+    READ_ONLY,
     async ({ symbols, productCode }) => {
       try {
         const queryParams: Record<string, any> = {};
@@ -167,6 +178,7 @@ export function registerInstrumentTools(server: McpServer) {
     {
       symbol: z.string().describe("The futures symbol (e.g., '/ESZ4')"),
     },
+    READ_ONLY,
     async ({ symbol }) => {
       try {
         const future = await getClient().instrumentsService.getSingleFuture(symbol);
@@ -183,6 +195,7 @@ export function registerInstrumentTools(server: McpServer) {
     {
       symbol: z.string().describe("The futures product code (e.g., 'ES')"),
     },
+    READ_ONLY,
     async ({ symbol }) => {
       try {
         const chain = await getClient().instrumentsService.getFutureOptionChain(symbol);
@@ -199,6 +212,7 @@ export function registerInstrumentTools(server: McpServer) {
     {
       symbol: z.string().describe("The futures product code (e.g., 'ES')"),
     },
+    READ_ONLY,
     async ({ symbol }) => {
       try {
         const chain = await getClient().instrumentsService.getNestedFutureOptionChains(symbol);
@@ -215,6 +229,7 @@ export function registerInstrumentTools(server: McpServer) {
     {
       symbols: z.array(z.string()).optional().describe("Array of future option symbols in TW format"),
     },
+    READ_ONLY,
     async ({ symbols }) => {
       try {
         const queryParams: Record<string, any> = {};
@@ -233,6 +248,7 @@ export function registerInstrumentTools(server: McpServer) {
     {
       symbol: z.string().describe("The future option symbol in TW format"),
     },
+    READ_ONLY,
     async ({ symbol }) => {
       try {
         const option = await getClient().instrumentsService.getSingleFutureOption(symbol);
@@ -247,6 +263,7 @@ export function registerInstrumentTools(server: McpServer) {
     "get_futures_products",
     "Get metadata for all supported futures products.",
     {},
+    READ_ONLY,
     async () => {
       try {
         const products = await getClient().instrumentsService.getFuturesProducts();
@@ -264,6 +281,7 @@ export function registerInstrumentTools(server: McpServer) {
       exchange: z.string().describe("The exchange (e.g., 'CME')"),
       code: z.string().describe("The product code (e.g., 'ES')"),
     },
+    READ_ONLY,
     async ({ exchange, code }) => {
       try {
         const product = await getClient().instrumentsService.getSingleFutureProduct(exchange, code);
@@ -278,6 +296,7 @@ export function registerInstrumentTools(server: McpServer) {
     "get_future_option_products",
     "Get metadata for all supported future option products.",
     {},
+    READ_ONLY,
     async () => {
       try {
         const products = await getClient().instrumentsService.getFutureOptionsProducts();
@@ -295,6 +314,7 @@ export function registerInstrumentTools(server: McpServer) {
       exchange: z.string().describe("The exchange (e.g., 'CME')"),
       rootSymbol: z.string().describe("The root symbol (e.g., 'ES')"),
     },
+    READ_ONLY,
     async ({ exchange, rootSymbol }) => {
       try {
         const product = await getClient().instrumentsService.getSingleFutureOptionProduct(exchange, rootSymbol);
@@ -311,6 +331,7 @@ export function registerInstrumentTools(server: McpServer) {
     {
       symbols: z.array(z.string()).optional().describe("Array of cryptocurrency symbols to look up"),
     },
+    READ_ONLY,
     async ({ symbols }) => {
       try {
         const cryptos = await getClient().instrumentsService.getCryptocurrencies(symbols || []);
@@ -327,6 +348,7 @@ export function registerInstrumentTools(server: McpServer) {
     {
       symbol: z.string().describe("The cryptocurrency symbol (e.g., 'BTC/USD')"),
     },
+    READ_ONLY,
     async ({ symbol }) => {
       try {
         const crypto = await getClient().instrumentsService.getSingleCryptocurrency(symbol);
@@ -343,6 +365,7 @@ export function registerInstrumentTools(server: McpServer) {
     {
       symbols: z.array(z.string()).optional().describe("Array of warrant symbols to look up"),
     },
+    READ_ONLY,
     async ({ symbols }) => {
       try {
         const queryParams: Record<string, any> = {};
@@ -361,6 +384,7 @@ export function registerInstrumentTools(server: McpServer) {
     {
       symbol: z.string().describe("The warrant symbol"),
     },
+    READ_ONLY,
     async ({ symbol }) => {
       try {
         const warrant = await getClient().instrumentsService.getSingleWarrant(symbol);
@@ -375,6 +399,7 @@ export function registerInstrumentTools(server: McpServer) {
     "get_quantity_decimal_precisions",
     "Get all quantity decimal precisions for instruments.",
     {},
+    READ_ONLY,
     async () => {
       try {
         const precisions = await getClient().instrumentsService.getQuantityDecimalPrecisions();
@@ -391,6 +416,7 @@ export function registerInstrumentTools(server: McpServer) {
     {
       query: z.string().describe("The search query text"),
     },
+    READ_ONLY,
     async ({ query }) => {
       try {
         const results = await getClient().symbolSearchService.getSymbolData(query);

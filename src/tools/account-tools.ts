@@ -2,11 +2,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
 
+const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
+
 export function registerAccountTools(server: McpServer) {
   server.tool(
     "get_customer_accounts",
     "Get a list of all customer accounts associated with the authenticated user.",
     {},
+    READ_ONLY,
     async () => {
       try {
         const accounts = await getClient().accountsAndCustomersService.getCustomerAccounts();
@@ -21,6 +24,7 @@ export function registerAccountTools(server: McpServer) {
     "get_customer_resource",
     "Get the full customer resource (profile information) for the authenticated user.",
     {},
+    READ_ONLY,
     async () => {
       try {
         const customer = await getClient().accountsAndCustomersService.getCustomerResource();
@@ -37,6 +41,7 @@ export function registerAccountTools(server: McpServer) {
     {
       accountNumber: z.string().describe("The account number to retrieve details for"),
     },
+    READ_ONLY,
     async ({ accountNumber }) => {
       try {
         const account = await getClient().accountsAndCustomersService.getFullCustomerAccountResource(accountNumber);
@@ -53,6 +58,7 @@ export function registerAccountTools(server: McpServer) {
     {
       accountNumber: z.string().describe("The account number to check status for"),
     },
+    READ_ONLY,
     async ({ accountNumber }) => {
       try {
         const status = await getClient().accountStatusService.getAccountStatus(accountNumber);

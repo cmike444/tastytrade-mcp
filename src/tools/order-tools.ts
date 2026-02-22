@@ -2,6 +2,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
 
+const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
+const DESTRUCTIVE = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true } as const;
+
 export function registerOrderTools(server: McpServer) {
   server.tool(
     "get_live_orders",
@@ -9,6 +12,7 @@ export function registerOrderTools(server: McpServer) {
     {
       accountNumber: z.string().describe("The account number to get live orders for"),
     },
+    READ_ONLY,
     async ({ accountNumber }) => {
       try {
         const orders = await getClient().orderService.getLiveOrders(accountNumber);
@@ -28,6 +32,7 @@ export function registerOrderTools(server: McpServer) {
       pageOffset: z.number().optional().describe("Page offset for pagination"),
       status: z.string().optional().describe("Filter by order status (e.g., 'Filled', 'Cancelled', 'Live')"),
     },
+    READ_ONLY,
     async ({ accountNumber, perPage, pageOffset, status }) => {
       try {
         const queryParams: Record<string, any> = {};
@@ -49,6 +54,7 @@ export function registerOrderTools(server: McpServer) {
       accountNumber: z.string().describe("The account number"),
       orderId: z.number().describe("The order ID to retrieve"),
     },
+    READ_ONLY,
     async ({ accountNumber, orderId }) => {
       try {
         const order = await getClient().orderService.getOrder(accountNumber, orderId);
@@ -66,6 +72,7 @@ export function registerOrderTools(server: McpServer) {
       accountNumber: z.string().describe("The account number to place the order in"),
       orderJson: z.string().describe("JSON string of the order object with fields like time-in-force, order-type, legs, price, etc."),
     },
+    DESTRUCTIVE,
     async ({ accountNumber, orderJson }) => {
       try {
         const order = JSON.parse(orderJson);
@@ -84,6 +91,7 @@ export function registerOrderTools(server: McpServer) {
       accountNumber: z.string().describe("The account number"),
       orderJson: z.string().describe("JSON string of the order object to validate"),
     },
+    READ_ONLY,
     async ({ accountNumber, orderJson }) => {
       try {
         const order = JSON.parse(orderJson);
@@ -102,6 +110,7 @@ export function registerOrderTools(server: McpServer) {
       accountNumber: z.string().describe("The account number"),
       orderId: z.number().describe("The order ID to cancel"),
     },
+    DESTRUCTIVE,
     async ({ accountNumber, orderId }) => {
       try {
         const result = await getClient().orderService.cancelOrder(accountNumber, orderId);
@@ -120,6 +129,7 @@ export function registerOrderTools(server: McpServer) {
       orderId: z.number().describe("The order ID to replace"),
       replacementOrderJson: z.string().describe("JSON string of the replacement order"),
     },
+    DESTRUCTIVE,
     async ({ accountNumber, orderId, replacementOrderJson }) => {
       try {
         const replacementOrder = JSON.parse(replacementOrderJson);
@@ -139,6 +149,7 @@ export function registerOrderTools(server: McpServer) {
       orderId: z.number().describe("The order ID to edit"),
       editJson: z.string().describe("JSON string with the fields to edit (e.g., price)"),
     },
+    DESTRUCTIVE,
     async ({ accountNumber, orderId, editJson }) => {
       try {
         const edit = JSON.parse(editJson);
@@ -157,6 +168,7 @@ export function registerOrderTools(server: McpServer) {
       accountNumber: z.string().describe("The account number"),
       orderJson: z.string().describe("JSON string of the complex order object"),
     },
+    DESTRUCTIVE,
     async ({ accountNumber, orderJson }) => {
       try {
         const order = JSON.parse(orderJson);
@@ -175,6 +187,7 @@ export function registerOrderTools(server: McpServer) {
       accountNumber: z.string().describe("The account number"),
       orderId: z.number().describe("The complex order ID to cancel"),
     },
+    DESTRUCTIVE,
     async ({ accountNumber, orderId }) => {
       try {
         const result = await getClient().orderService.cancelComplexOrder(accountNumber, orderId);
@@ -192,6 +205,7 @@ export function registerOrderTools(server: McpServer) {
       accountNumber: z.string().describe("The account number"),
       orderId: z.number().describe("The order ID to reconfirm"),
     },
+    DESTRUCTIVE,
     async ({ accountNumber, orderId }) => {
       try {
         const result = await getClient().orderService.postReconfirmOrder(accountNumber, orderId);
@@ -210,6 +224,7 @@ export function registerOrderTools(server: McpServer) {
       orderId: z.number().describe("The order ID to check replacement for"),
       replacementOrderJson: z.string().describe("JSON string of the replacement order"),
     },
+    READ_ONLY,
     async ({ accountNumber, orderId, replacementOrderJson }) => {
       try {
         const replacementOrder = JSON.parse(replacementOrderJson);
@@ -227,6 +242,7 @@ export function registerOrderTools(server: McpServer) {
     {
       customerId: z.string().describe("The customer ID"),
     },
+    READ_ONLY,
     async ({ customerId }) => {
       try {
         const orders = await getClient().orderService.getLiveOrdersForCustomer(customerId);
@@ -245,6 +261,7 @@ export function registerOrderTools(server: McpServer) {
       perPage: z.number().optional().describe("Number of orders per page"),
       pageOffset: z.number().optional().describe("Page offset for pagination"),
     },
+    READ_ONLY,
     async ({ customerId, perPage, pageOffset }) => {
       try {
         const queryParams: Record<string, any> = {};

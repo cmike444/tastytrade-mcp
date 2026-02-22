@@ -2,6 +2,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
 
+const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
+
 export function registerRiskMarginTools(server: McpServer) {
   server.tool(
     "get_margin_requirements",
@@ -9,6 +11,7 @@ export function registerRiskMarginTools(server: McpServer) {
     {
       accountNumber: z.string().describe("The account number"),
     },
+    READ_ONLY,
     async ({ accountNumber }) => {
       try {
         const margin = await getClient().marginRequirementsService.getMarginRequirements(accountNumber);
@@ -26,6 +29,7 @@ export function registerRiskMarginTools(server: McpServer) {
       accountNumber: z.string().describe("The account number"),
       orderJson: z.string().describe("JSON string of the order to estimate margin for"),
     },
+    READ_ONLY,
     async ({ accountNumber, orderJson }) => {
       try {
         const order = JSON.parse(orderJson);
@@ -44,6 +48,7 @@ export function registerRiskMarginTools(server: McpServer) {
       accountNumber: z.string().describe("The account number"),
       underlyingSymbol: z.string().describe("The underlying symbol to get margin requirements for"),
     },
+    READ_ONLY,
     async ({ accountNumber, underlyingSymbol }) => {
       try {
         const margin = await getClient().riskParametersService.getEffectiveMarginRequirements(accountNumber, underlyingSymbol);
@@ -60,6 +65,7 @@ export function registerRiskMarginTools(server: McpServer) {
     {
       accountNumber: z.string().describe("The account number"),
     },
+    READ_ONLY,
     async ({ accountNumber }) => {
       try {
         const limit = await getClient().riskParametersService.getPositionLimit(accountNumber);
@@ -77,6 +83,7 @@ export function registerRiskMarginTools(server: McpServer) {
       accountNumber: z.string().describe("The account number"),
       timeBack: z.string().optional().describe("Time period to look back (e.g., '1d', '1m', '3m', '1y', 'all')"),
     },
+    READ_ONLY,
     async ({ accountNumber, timeBack }) => {
       try {
         const queryParams: Record<string, any> = {};
@@ -95,6 +102,7 @@ export function registerRiskMarginTools(server: McpServer) {
     {
       accountNumber: z.string().describe("The account number"),
     },
+    READ_ONLY,
     async ({ accountNumber }) => {
       try {
         const value = await getClient().netLiquidatingValueHistoryService.getNetLiquidatingValue(accountNumber);

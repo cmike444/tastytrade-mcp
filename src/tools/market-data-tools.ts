@@ -2,6 +2,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
 
+const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
+
 export function registerMarketDataTools(server: McpServer) {
   server.tool(
     "get_market_metrics",
@@ -9,6 +11,7 @@ export function registerMarketDataTools(server: McpServer) {
     {
       symbols: z.array(z.string()).describe("Array of symbols to get market metrics for (e.g., ['AAPL', 'TSLA'])"),
     },
+    READ_ONLY,
     async ({ symbols }) => {
       try {
         const queryParams = { symbols: symbols.join(",") };
@@ -26,6 +29,7 @@ export function registerMarketDataTools(server: McpServer) {
     {
       symbol: z.string().describe("The symbol to get dividend history for (e.g., 'AAPL')"),
     },
+    READ_ONLY,
     async ({ symbol }) => {
       try {
         const dividends = await getClient().marketMetricsService.getHistoricalDividendData(symbol);
@@ -43,6 +47,7 @@ export function registerMarketDataTools(server: McpServer) {
       symbol: z.string().describe("The symbol to get earnings history for (e.g., 'AAPL')"),
       startDate: z.string().optional().describe("Start date in YYYY-MM-DD format"),
     },
+    READ_ONLY,
     async ({ symbol, startDate }) => {
       try {
         const queryParams: Record<string, any> = {};
@@ -62,6 +67,7 @@ export function registerMarketDataTools(server: McpServer) {
       symbols: z.array(z.string()).describe("Array of symbols to get quotes for (e.g., ['AAPL', 'TSLA'])"),
       timeoutMs: z.number().default(5000).describe("Timeout in milliseconds to wait for quotes (default 5000)"),
     },
+    READ_ONLY,
     async ({ symbols, timeoutMs }) => {
       try {
         const client = getClient();
@@ -106,6 +112,7 @@ export function registerMarketDataTools(server: McpServer) {
       daysBack: z.number().default(1).describe("Number of days of historical data to fetch"),
       timeoutMs: z.number().default(8000).describe("Timeout in milliseconds to wait for candle data (default 8000)"),
     },
+    READ_ONLY,
     async ({ symbol, periodMinutes, daysBack, timeoutMs }) => {
       try {
         const client = getClient();
@@ -152,6 +159,7 @@ export function registerMarketDataTools(server: McpServer) {
       optionSymbols: z.array(z.string()).describe("Array of option streamer symbols. Use call-streamer-symbol or put-streamer-symbol from option chain endpoints."),
       timeoutMs: z.number().default(5000).describe("Timeout in milliseconds to wait for Greeks data (default 5000)"),
     },
+    READ_ONLY,
     async ({ optionSymbols, timeoutMs }) => {
       try {
         const client = getClient();
@@ -204,6 +212,7 @@ export function registerMarketDataTools(server: McpServer) {
     "get_api_quote_token",
     "Get the quote streamer authentication token and endpoint for DXLink market data access.",
     {},
+    READ_ONLY,
     async () => {
       try {
         const token = await getClient().accountsAndCustomersService.getApiQuoteToken();
