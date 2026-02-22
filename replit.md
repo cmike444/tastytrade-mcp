@@ -58,7 +58,7 @@ src/
 - **TASTYTRADE_SANDBOX**: Set to `true` to use TastyTrade sandbox environment (optional)
 - **PORT**: HTTP server port (defaults to 5000)
 
-### Available MCP Tools (73)
+### Available MCP Tools (72)
 - **Auth**: check_auth_status, disconnect
 - **Accounts**: get_customer_accounts, get_customer_resource, get_full_account_resource, get_account_status
 - **Balances/Positions**: get_account_balances, get_positions, get_balance_snapshots

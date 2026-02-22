@@ -1,6 +1,6 @@
 # TastyTrade MCP Server
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that connects to your TastyTrade brokerage account and exposes 73 trading tools. Built with the official [TastyTrade JavaScript SDK](https://github.com/tastytrade/tastytrade-api-js) and [DXLink](https://tools.dxfeed.com/dxlink) for real-time market data, quotes, and options Greeks.
+A [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that connects to your TastyTrade brokerage account and exposes 72 trading tools. Built with the official [TastyTrade JavaScript SDK](https://github.com/tastytrade/tastytrade-api-js) and [DXLink](https://tools.dxfeed.com/dxlink) for real-time market data, quotes, and options Greeks.
 
 Works with **ChatGPT Desktop**, **Claude Desktop**, or any MCP-compatible client -- both locally and in the cloud.
 
@@ -8,8 +8,9 @@ Works with **ChatGPT Desktop**, **Claude Desktop**, or any MCP-compatible client
 
 ## Features
 
-- **73 MCP tools** covering the full TastyTrade API
-- **OAuth 2.0 authentication** using client secret + refresh token
+- **72 MCP tools** covering the full TastyTrade API
+- **Automatic authentication** using stored TastyTrade credentials (client secret + refresh token)
+- **OAuth 2.1 authorization server** for ChatGPT and remote MCP clients (PKCE, Dynamic Client Registration)
 - **Real-time market data** via DXLink (quotes, candles, options Greeks)
 - **Dual transport**: stdio (local) and Streamable HTTP (cloud)
 - **Bearer token security** for cloud deployments
@@ -107,39 +108,48 @@ Authorization: Bearer your-secret-token
 |---|---|---|---|
 | `MCP_TRANSPORT` | No | `stdio` | Transport mode: `stdio` (local) or `http` (cloud) |
 | `MCP_BEARER_TOKEN` | For cloud | - | Secret token to protect the HTTP endpoint |
+| `TASTYTRADE_CLIENT_SECRET` | Yes | - | TastyTrade OAuth client secret (auto-loaded on startup) |
+| `TASTYTRADE_REFRESH_TOKEN` | Yes | - | TastyTrade OAuth refresh token (auto-loaded on startup) |
+| `TASTYTRADE_SANDBOX` | No | `false` | Set to `true` to use TastyTrade's sandbox/test environment |
 | `PORT` | No | `5000` | HTTP server port (cloud mode only) |
 
 ---
 
 ## TastyTrade Authentication
 
-Once connected through any MCP client, the first step is to authenticate with your TastyTrade account using the `authenticate_oauth` tool:
-
-```
-authenticate_oauth({
-  clientSecret: "your-client-secret",
-  refreshToken: "your-refresh-token",
-  oauthScopes: ["read", "trade"],
-  sandbox: false
-})
-```
-
-**Parameters:**
-- `clientSecret` - Your TastyTrade API client secret
-- `refreshToken` - Your TastyTrade OAuth refresh token
-- `oauthScopes` - Permissions: `"read"` for account data, `"trade"` for order execution
-- `sandbox` - Set to `true` to use TastyTrade's sandbox/test environment
+The server automatically authenticates with TastyTrade on startup using the `TASTYTRADE_CLIENT_SECRET` and `TASTYTRADE_REFRESH_TOKEN` environment variables. No manual authentication step is needed.
 
 To obtain your client secret and refresh token, register for API access through TastyTrade's developer portal.
 
+Use the `check_auth_status` tool to verify the connection status or retry authentication if needed.
+
 ---
 
-## Available Tools (73)
+## OAuth 2.1 Authorization Server
 
-### Authentication (3)
+For remote MCP clients like ChatGPT, the server includes a built-in OAuth 2.1 authorization server that supports:
+
+- **PKCE** (S256) for secure authorization code exchange
+- **Dynamic Client Registration** (RFC 7591) for automatic client onboarding
+- **Discovery endpoints** (`/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`)
+
+### OAuth Flow
+
+1. Client discovers OAuth config via `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`
+2. Client registers dynamically via `POST /oauth/register`
+3. Client redirects user to `GET /oauth/authorize` with PKCE challenge
+4. User enters their `MCP_BEARER_TOKEN` on the authorization page
+5. Server redirects back with authorization code
+6. Client exchanges code for access token at `POST /oauth/token` with PKCE verifier
+7. Client uses access token as Bearer token for MCP requests
+
+---
+
+## Available Tools (72)
+
+### Authentication (2)
 | Tool | Description |
 |---|---|
-| `authenticate_oauth` | Authenticate with TastyTrade using OAuth 2.0 |
 | `check_auth_status` | Check current authentication status |
 | `disconnect` | Disconnect from TastyTrade |
 
@@ -251,7 +261,10 @@ To obtain your client secret and refresh token, register for API access through 
 
 This project is configured for deployment on Replit as an always-on VM:
 
-1. Set the `MCP_BEARER_TOKEN` secret in the Replit Secrets panel
+1. Set the following secrets in the Replit Secrets panel:
+   - `MCP_BEARER_TOKEN`
+   - `TASTYTRADE_CLIENT_SECRET`
+   - `TASTYTRADE_REFRESH_TOKEN`
 2. Click **Publish** to deploy
 3. Your MCP endpoint will be available at `https://your-replit-url/mcp`
 
@@ -261,8 +274,10 @@ This project is configured for deployment on Replit as an always-on VM:
 
 ```
 src/
-  index.ts                    - Entry point (dual transport + bearer auth)
-  tastytrade-client.ts        - TastyTrade client wrapper (OAuth)
+  index.ts                    - Entry point (dual transport + OAuth 2.1 + bearer auth)
+  tastytrade-client.ts        - TastyTrade client wrapper (auto-authentication on startup)
+  oauth-provider.ts           - Built-in OAuth 2.1 authorization server (DCR, PKCE, token management)
+  auth-page.ts                - HTML authorization page rendered during OAuth flow
   tools/
     auth-tools.ts             - Authentication tools
     account-tools.ts          - Account & customer tools
