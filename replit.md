@@ -53,10 +53,13 @@ src/
 ### Environment Variables
 - **MCP_TRANSPORT**: Set to `http` for cloud mode, defaults to `stdio` for local mode
 - **MCP_BEARER_TOKEN**: Secret token to protect the HTTP endpoint (required for cloud deployment)
+- **TASTYTRADE_CLIENT_SECRET**: TastyTrade OAuth client secret (stored as Replit secret, auto-loaded on startup)
+- **TASTYTRADE_REFRESH_TOKEN**: TastyTrade OAuth refresh token (stored as Replit secret, auto-loaded on startup)
+- **TASTYTRADE_SANDBOX**: Set to `true` to use TastyTrade sandbox environment (optional)
 - **PORT**: HTTP server port (defaults to 5000)
 
 ### Available MCP Tools (73)
-- **Auth**: authenticate_oauth, check_auth_status, disconnect
+- **Auth**: check_auth_status, disconnect
 - **Accounts**: get_customer_accounts, get_customer_resource, get_full_account_resource, get_account_status
 - **Balances/Positions**: get_account_balances, get_positions, get_balance_snapshots
 - **Orders**: create_order, order_dry_run, cancel_order, replace_order, edit_order, get_orders, get_live_orders, create_complex_order, etc.
@@ -100,15 +103,7 @@ https://your-replit-url/mcp
 Health check available at `/health`.
 
 ### TastyTrade Authentication
-Before using any tools, authenticate with:
-```
-authenticate_oauth({
-  clientSecret: "your-client-secret",
-  refreshToken: "your-refresh-token",
-  oauthScopes: ["read", "trade"],
-  sandbox: false
-})
-```
+The server automatically authenticates with TastyTrade on startup using stored secrets (TASTYTRADE_CLIENT_SECRET and TASTYTRADE_REFRESH_TOKEN). No manual authentication is needed. If credentials need to be updated, set them in Replit secrets. Use `check_auth_status` tool to verify connection or retry authentication.
 
 ## Deployment
 - **Target**: VM (always-on, stateful sessions)
@@ -117,6 +112,7 @@ authenticate_oauth({
 - **Port**: 5000
 
 ## Recent Changes
+- 2026-02-22: Server-side credential storage - TastyTrade credentials auto-loaded from Replit secrets on startup, removed authenticate_oauth tool to prevent credential exposure through chat
 - 2026-02-22: Added OAuth 2.1 authorization server for ChatGPT compatibility (PKCE, DCR, discovery endpoints)
 - 2026-02-20: Added dual transport (stdio + Streamable HTTP) with bearer token auth
 - 2026-02-20: Initial implementation with full TastyTrade API coverage (73 tools)

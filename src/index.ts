@@ -7,6 +7,7 @@ import express from "express";
 import { randomUUID } from "node:crypto";
 import { registerAuthTools } from "./tools/auth-tools.js";
 import { registerAccountTools } from "./tools/account-tools.js";
+import { autoAuthenticate } from "./tastytrade-client.js";
 import { registerBalancePositionTools } from "./tools/balance-position-tools.js";
 import { registerOrderTools } from "./tools/order-tools.js";
 import { registerInstrumentTools } from "./tools/instrument-tools.js";
@@ -348,6 +349,14 @@ async function startStdioServer() {
 }
 
 async function main() {
+  try {
+    const result = await autoAuthenticate();
+    console.error(`[TastyTrade] ${result}`);
+  } catch (error: any) {
+    console.error(`[TastyTrade] Auto-authentication failed: ${error.message}`);
+    console.error("[TastyTrade] Server will start without TastyTrade connection. Use check_auth_status tool to retry.");
+  }
+
   if (MODE === "http") {
     await startHttpServer();
   } else {

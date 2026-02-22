@@ -7,7 +7,7 @@ import WebSocket from "ws";
 let client: TastytradeClient | null = null;
 let isAuthenticated = false;
 
-export interface TastyTradeConfig {
+export interface TastyTradeOAuthConfig {
   clientSecret: string;
   refreshToken: string;
   oauthScopes: string[];
@@ -16,7 +16,7 @@ export interface TastyTradeConfig {
 
 export function getClient(): TastytradeClient {
   if (!client) {
-    throw new Error("TastyTrade client is not initialized. Call authenticateOAuth first.");
+    throw new Error("TastyTrade client is not initialized. Authentication has not completed.");
   }
   return client;
 }
@@ -25,23 +25,53 @@ export function isClientAuthenticated(): boolean {
   return isAuthenticated && client !== null;
 }
 
-export async function authenticateOAuth(config: TastyTradeConfig): Promise<string> {
+export async function authenticateOAuth(config: TastyTradeOAuthConfig): Promise<string> {
   const baseConfig = config.sandbox
     ? TastytradeClient.SandboxConfig
     : TastytradeClient.ProdConfig;
 
-  client = new TastytradeClient({
-    ...baseConfig,
-    clientSecret: config.clientSecret,
-    refreshToken: config.refreshToken,
-    oauthScopes: config.oauthScopes,
-  } as any);
+  console.error("[TastyTrade] Attempting OAuth authentication...");
 
-  const accounts = await client.accountsAndCustomersService.getCustomerAccounts();
-  isAuthenticated = true;
+  try {
+    client = new TastytradeClient({
+      ...baseConfig,
+      clientSecret: config.clientSecret,
+      refreshToken: config.refreshToken,
+      oauthScopes: config.oauthScopes,
+    } as any);
 
-  const accountCount = Array.isArray(accounts) ? accounts.length : 0;
-  return `Successfully authenticated via OAuth. Found ${accountCount} account(s).`;
+    const accounts = await client.accountsAndCustomersService.getCustomerAccounts();
+    isAuthenticated = true;
+
+    const accountCount = Array.isArray(accounts) ? accounts.length : 0;
+    return `Successfully authenticated via OAuth. Found ${accountCount} account(s).`;
+  } catch (error: any) {
+    if (error.response) {
+      console.error(`[TastyTrade] API Error Status: ${error.response.status}`);
+      console.error(`[TastyTrade] API Error Data:`, JSON.stringify(error.response.data));
+      console.error(`[TastyTrade] API Error URL: ${error.response.config?.url}`);
+    }
+    throw error;
+  }
+}
+
+export async function autoAuthenticate(): Promise<string> {
+  const clientSecret = process.env.TASTYTRADE_CLIENT_SECRET;
+  const refreshToken = process.env.TASTYTRADE_REFRESH_TOKEN;
+  const sandbox = process.env.TASTYTRADE_SANDBOX === "true";
+
+  if (clientSecret && refreshToken) {
+    return authenticateOAuth({
+      clientSecret,
+      refreshToken,
+      oauthScopes: ["read", "trade"],
+      sandbox,
+    });
+  }
+
+  throw new Error(
+    "No TastyTrade credentials found. Set TASTYTRADE_CLIENT_SECRET and TASTYTRADE_REFRESH_TOKEN as secrets."
+  );
 }
 
 export async function disconnectClient(): Promise<void> {
