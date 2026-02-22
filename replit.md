@@ -16,8 +16,10 @@ A Model Context Protocol (MCP) server that integrates with TastyTrade brokerage 
 ### Project Structure
 ```
 src/
-  index.ts                    - Main entry point, dual transport (stdio + HTTP), bearer auth
+  index.ts                    - Main entry point, dual transport (stdio + HTTP), OAuth + bearer auth
   tastytrade-client.ts        - TastyTrade client wrapper with OAuth authentication
+  oauth-provider.ts           - Built-in OAuth 2.1 authorization server (DCR, PKCE, token management)
+  auth-page.ts                - HTML authorization page rendered during OAuth flow
   tools/
     auth-tools.ts             - Authentication tools (OAuth login, status, disconnect)
     account-tools.ts          - Account and customer info tools
@@ -31,12 +33,22 @@ src/
 ```
 
 ### Key Design Decisions
-- **OAuth 2.0**: Uses TastyTrade's OAuth with client secret + refresh token (SDK v7 pattern)
+- **OAuth 2.1 Server**: Built-in authorization server supporting PKCE (S256), Dynamic Client Registration (RFC 7591), and standard discovery endpoints (RFC 8414, RFC 9728). Allows ChatGPT and other MCP clients to connect via standard OAuth flow.
+- **TastyTrade OAuth**: Uses TastyTrade's OAuth with client secret + refresh token (SDK v7 pattern)
 - **Dual transport**: Supports both stdio (for local CLI use) and Streamable HTTP (for cloud deployment)
-- **Bearer token auth**: HTTP endpoint protected by MCP_BEARER_TOKEN environment variable
+- **Dual auth**: MCP endpoints accept both direct bearer tokens (MCP_BEARER_TOKEN) and OAuth-issued access tokens
 - **Session management**: HTTP transport uses stateful sessions with UUID-based session IDs
 - **WebSocket polyfill**: Uses `ws` package to polyfill WebSocket for Node.js (required by TastyTrade SDK's account streamer and DXLink)
 - **DXLink integration**: Market data (quotes, candles, Greeks) is fetched via TastyTrade's QuoteStreamer which wraps DXLink
+
+### OAuth 2.1 Flow (for ChatGPT / remote MCP clients)
+1. Client discovers OAuth config via `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`
+2. Client registers dynamically via `POST /oauth/register`
+3. Client redirects user to `GET /oauth/authorize` with PKCE challenge
+4. User enters their MCP_BEARER_TOKEN on the authorization page
+5. Server redirects back with authorization code
+6. Client exchanges code for access token at `POST /oauth/token` with PKCE verifier
+7. Client uses access token as Bearer token for MCP requests
 
 ### Environment Variables
 - **MCP_TRANSPORT**: Set to `http` for cloud mode, defaults to `stdio` for local mode
@@ -105,5 +117,6 @@ authenticate_oauth({
 - **Port**: 5000
 
 ## Recent Changes
+- 2026-02-22: Added OAuth 2.1 authorization server for ChatGPT compatibility (PKCE, DCR, discovery endpoints)
 - 2026-02-20: Added dual transport (stdio + Streamable HTTP) with bearer token auth
 - 2026-02-20: Initial implementation with full TastyTrade API coverage (73 tools)
