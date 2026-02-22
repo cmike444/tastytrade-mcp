@@ -108,11 +108,14 @@ async function startHttpServer() {
   });
 
   app.post("/oauth/register", (req, res) => {
+    console.error(`[OAuth] POST /oauth/register body:`, JSON.stringify(req.body));
     const result = registerClient(req.body);
     if ("error" in result) {
+      console.error(`[OAuth] Registration failed:`, result.error);
       res.status(400).json({ error: "invalid_client_metadata", error_description: result.error });
       return;
     }
+    console.error(`[OAuth] Registered client: ${result.client_id} (${result.client_name})`);
     res.status(201).json(result);
   });
 
@@ -143,6 +146,7 @@ async function startHttpServer() {
     }
 
     const client = getClient(client_id);
+    console.error(`[OAuth] GET /oauth/authorize client_id=${client_id} found=${!!client}`);
     if (!client) {
       res.status(400).json({ error: "invalid_client" });
       return;
@@ -206,27 +210,32 @@ async function startHttpServer() {
   });
 
   app.post("/oauth/token", (req, res) => {
+    console.error(`[OAuth] POST /oauth/token body:`, JSON.stringify(req.body));
     const { grant_type, code, client_id, code_verifier, redirect_uri } = req.body as Record<
       string,
       string
     >;
 
     if (grant_type !== "authorization_code") {
+      console.error(`[OAuth] Token error: unsupported grant_type=${grant_type}`);
       res.status(400).json({ error: "unsupported_grant_type" });
       return;
     }
 
     if (!code || !client_id || !code_verifier || !redirect_uri) {
+      console.error(`[OAuth] Token error: missing params code=${!!code} client_id=${!!client_id} verifier=${!!code_verifier} uri=${!!redirect_uri}`);
       res.status(400).json({ error: "invalid_request" });
       return;
     }
 
     const tokenResult = exchangeCode(code, client_id, code_verifier, redirect_uri);
     if (!tokenResult) {
+      console.error(`[OAuth] Token error: invalid_grant for client_id=${client_id}`);
       res.status(400).json({ error: "invalid_grant" });
       return;
     }
 
+    console.error(`[OAuth] Token issued for client_id=${client_id}`);
     res.json({
       access_token: tokenResult.token,
       token_type: "Bearer",

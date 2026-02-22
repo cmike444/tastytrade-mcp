@@ -1,13 +1,14 @@
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID, createHash, randomBytes } from "node:crypto";
 
 interface OAuthClient {
   client_id: string;
+  client_secret: string;
   client_name?: string;
   redirect_uris: string[];
   grant_types: string[];
   response_types: string[];
   token_endpoint_auth_method: string;
-  created_at: number;
+  client_id_issued_at: number;
 }
 
 interface AuthorizationCode {
@@ -38,9 +39,9 @@ export function getServerMetadata(issuer: string) {
     token_endpoint: `${issuer}/oauth/token`,
     registration_endpoint: `${issuer}/oauth/register`,
     response_types_supported: ["code"],
-    grant_types_supported: ["authorization_code"],
+    grant_types_supported: ["authorization_code", "refresh_token"],
     code_challenge_methods_supported: ["S256"],
-    token_endpoint_auth_methods_supported: ["none"],
+    token_endpoint_auth_methods_supported: ["client_secret_post", "none"],
     scopes_supported: ["mcp:tools"],
   };
 }
@@ -68,14 +69,16 @@ export function registerClient(body: Record<string, unknown>): OAuthClient | { e
   }
 
   const client_id = randomUUID();
+  const client_secret = randomBytes(32).toString("hex");
   const client: OAuthClient = {
     client_id,
+    client_secret,
     client_name: (body.client_name as string) || "MCP Client",
     redirect_uris,
-    grant_types: (body.grant_types as string[]) || ["authorization_code"],
+    grant_types: (body.grant_types as string[]) || ["authorization_code", "refresh_token"],
     response_types: (body.response_types as string[]) || ["code"],
-    token_endpoint_auth_method: (body.token_endpoint_auth_method as string) || "none",
-    created_at: Date.now(),
+    token_endpoint_auth_method: (body.token_endpoint_auth_method as string) || "client_secret_post",
+    client_id_issued_at: Math.floor(Date.now() / 1000),
   };
   clients.set(client_id, client);
   return client;
