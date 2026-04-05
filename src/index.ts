@@ -100,7 +100,7 @@ async function startHttpServer() {
 
   app.get("/.well-known/oauth-protected-resource", (req, res) => {
     const baseUrl = getBaseUrl(req);
-    res.json(getProtectedResourceMetadata(baseUrl, baseUrl));
+    res.json(getProtectedResourceMetadata(`${baseUrl}/mcp`, baseUrl));
   });
 
   app.get("/.well-known/oauth-authorization-server", (req, res) => {
@@ -223,7 +223,7 @@ async function startHttpServer() {
 
   app.post("/oauth/token", (req, res) => {
     console.error(`[OAuth] POST /oauth/token body:`, JSON.stringify(req.body));
-    const { grant_type, code, client_id, code_verifier, redirect_uri } = req.body as Record<
+    const { grant_type, code, client_id, code_verifier, redirect_uri, client_secret } = req.body as Record<
       string,
       string
     >;
@@ -240,7 +240,7 @@ async function startHttpServer() {
       return;
     }
 
-    const tokenResult = exchangeCode(code, client_id, code_verifier, redirect_uri);
+    const tokenResult = exchangeCode(code, client_id, code_verifier, redirect_uri, client_secret);
     if (!tokenResult) {
       console.error(`[OAuth] Token error: invalid_grant for client_id=${client_id}`);
       res.status(400).json({ error: "invalid_grant" });

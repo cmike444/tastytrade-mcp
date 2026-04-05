@@ -46,9 +46,9 @@ export function getServerMetadata(issuer: string) {
   };
 }
 
-export function getProtectedResourceMetadata(resourceUrl: string, authServerUrl: string) {
+export function getProtectedResourceMetadata(mcpUrl: string, authServerUrl: string) {
   return {
-    resource: resourceUrl,
+    resource: mcpUrl,
     authorization_servers: [authServerUrl],
     bearer_methods_supported: ["header"],
     scopes_supported: ["mcp:tools"],
@@ -70,6 +70,7 @@ export function registerClient(body: Record<string, unknown>): OAuthClient | { e
 
   const client_id = randomUUID();
   const client_secret = randomBytes(32).toString("hex");
+  const requestedAuthMethod = (body.token_endpoint_auth_method as string) || "none";
   const client: OAuthClient = {
     client_id,
     client_secret,
@@ -77,7 +78,7 @@ export function registerClient(body: Record<string, unknown>): OAuthClient | { e
     redirect_uris,
     grant_types: (body.grant_types as string[]) || ["authorization_code", "refresh_token"],
     response_types: (body.response_types as string[]) || ["code"],
-    token_endpoint_auth_method: (body.token_endpoint_auth_method as string) || "client_secret_post",
+    token_endpoint_auth_method: requestedAuthMethod,
     client_id_issued_at: Math.floor(Date.now() / 1000),
   };
   clients.set(client_id, client);
@@ -116,7 +117,8 @@ export function exchangeCode(
   code: string,
   clientId: string,
   codeVerifier: string,
-  redirectUri: string
+  redirectUri: string,
+  clientSecret?: string
 ): AccessToken | null {
   const authCode = authorizationCodes.get(code);
   if (!authCode) return null;
@@ -125,6 +127,13 @@ export function exchangeCode(
   if (authCode.expires_at < Date.now()) {
     authorizationCodes.delete(code);
     return null;
+  }
+
+  const client = clients.get(clientId);
+  if (client && client.token_endpoint_auth_method === "client_secret_post") {
+    if (!clientSecret || clientSecret !== client.client_secret) {
+      return null;
+    }
   }
 
   const expectedChallenge = createHash("sha256")
