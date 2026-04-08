@@ -91,8 +91,8 @@ export function renderAuthorizationPage(params: {
       <input type="password" id="token" name="token" placeholder="Your MCP_BEARER_TOKEN" required>
       <p class="error" id="error-msg">Invalid token</p>
       <div class="buttons">
-        <button type="button" class="btn-deny" onclick="denyAccess()">Deny</button>
-        <button type="submit" class="btn-approve">Authorize</button>
+        <button type="button" class="btn-deny" id="btn-deny" onclick="denyAccess()">Deny</button>
+        <button type="submit" class="btn-approve" id="btn-approve">Authorize</button>
       </div>
     </form>
   </div>
@@ -106,6 +106,48 @@ export function renderAuthorizationPage(params: {
       if (state) url.searchParams.set('state', state);
       window.location.href = url.toString();
     }
+
+    document.querySelector('form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+
+      const approveBtn = document.getElementById('btn-approve');
+      const denyBtn = document.getElementById('btn-deny');
+      const errorMsg = document.getElementById('error-msg');
+
+      approveBtn.disabled = true;
+      approveBtn.textContent = 'Authorizing\u2026';
+      denyBtn.disabled = true;
+      errorMsg.style.display = 'none';
+
+      const formData = new FormData(this);
+      const body = new URLSearchParams(formData);
+
+      try {
+        const response = await fetch('/oauth/authorize/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: body.toString()
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || data.error) {
+          approveBtn.disabled = false;
+          approveBtn.textContent = 'Authorize';
+          denyBtn.disabled = false;
+          errorMsg.style.display = 'block';
+          return;
+        }
+
+        window.location.href = data.redirect_url;
+        setTimeout(function() { window.close(); }, 300);
+      } catch (err) {
+        approveBtn.disabled = false;
+        approveBtn.textContent = 'Authorize';
+        denyBtn.disabled = false;
+        errorMsg.style.display = 'block';
+      }
+    });
   </script>
 </body>
 </html>`;

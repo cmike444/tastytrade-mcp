@@ -187,18 +187,8 @@ async function startHttpServer() {
       }
 
       if (!BEARER_TOKEN || token !== BEARER_TOKEN) {
-        console.error(`[OAuth] Submit: invalid bearer token, re-rendering auth page`);
-        res.type("html").send(
-          renderAuthorizationPage({
-            client_id,
-            redirect_uri,
-            state: state || "",
-            code_challenge,
-            code_challenge_method: code_challenge_method || "S256",
-            scope: scope || "mcp:tools",
-            client_name: submitClient.client_name,
-          })
-        );
+        console.error(`[OAuth] Submit: invalid bearer token`);
+        res.status(401).json({ error: "invalid_token" });
         return;
       }
 
@@ -210,11 +200,11 @@ async function startHttpServer() {
         scope: scope || "mcp:tools",
       });
 
-      console.error(`[OAuth] Submit: code created, redirecting to ${redirect_uri}`);
+      console.error(`[OAuth] Submit: code created, returning redirect URL to client`);
       const redirectUrl = new URL(redirect_uri);
       redirectUrl.searchParams.set("code", code);
       if (state) redirectUrl.searchParams.set("state", state);
-      res.redirect(302, redirectUrl.toString());
+      res.json({ redirect_url: redirectUrl.toString() });
     } catch (err) {
       console.error(`[OAuth] Submit crash:`, err);
       res.status(500).json({ error: "server_error", error_description: "Internal error during authorization" });
