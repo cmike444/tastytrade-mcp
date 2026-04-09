@@ -438,12 +438,13 @@ const TOOL_REGISTRY: ToolEntry[] = [
   // ── Market Data ───────────────────────────────────────────────────────────
   {
     name: "get_market_metrics",
-    description: "Get market metrics (volatility data, IV rank, IV percentile) for given symbols. Includes options Greeks data like implied volatility.",
+    description: "Get market metrics (volatility data, IV rank, IV percentile) for given symbols. Use 'detail' to control response size: 'summary' returns symbol, IV rank, IV percentile; 'standard' returns common volatility fields (default); 'full' returns the complete API payload.",
     category: "Market Data",
     inputSchema: {
       type: "object",
       properties: {
         symbols: { type: "array", items: { type: "string" }, description: "Array of symbols to get market metrics for (e.g., ['AAPL', 'TSLA'])" },
+        detail: { type: "string", enum: ["summary", "standard", "full"], description: "Response detail level: 'summary' (symbol, IV rank, IV percentile), 'standard' (common volatility fields, default), 'full' (complete raw payload)" },
       },
       required: ["symbols"],
     },
@@ -451,24 +452,28 @@ const TOOL_REGISTRY: ToolEntry[] = [
   },
   {
     name: "get_historical_dividends",
-    description: "Get historical dividend data for a symbol.",
+    description: "Get historical dividend data for a symbol. Use 'limit' to cap the number of records returned (default 10).",
     category: "Market Data",
     inputSchema: {
       type: "object",
-      properties: { symbol: { type: "string", description: "The symbol to get dividend history for (e.g., 'AAPL')" } },
+      properties: {
+        symbol: { type: "string", description: "The symbol to get dividend history for (e.g., 'AAPL')" },
+        limit: { type: "number", description: "Maximum number of historical records to return (default 10; set to 0 for no limit)" },
+      },
       required: ["symbol"],
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: "get_historical_earnings",
-    description: "Get historical earnings data for a symbol.",
+    description: "Get historical earnings data for a symbol. Use 'limit' to cap the number of records returned (default 10).",
     category: "Market Data",
     inputSchema: {
       type: "object",
       properties: {
         symbol: { type: "string", description: "The symbol to get earnings history for (e.g., 'AAPL')" },
         startDate: { type: "string", description: "Start date in YYYY-MM-DD format" },
+        limit: { type: "number", description: "Maximum number of historical records to return (default 10; set to 0 for no limit)" },
       },
       required: ["symbol"],
     },
@@ -476,13 +481,14 @@ const TOOL_REGISTRY: ToolEntry[] = [
   },
   {
     name: "get_quote",
-    description: "Get real-time quote data for one or more symbols using DXLink. Returns bid, ask, last price, volume, and other quote fields.",
+    description: "Get real-time quote data for one or more symbols using DXLink. Use 'detail' to control response size: 'summary' returns only bid, ask, last, and symbol; 'standard' returns common quote fields (default); 'full' returns the raw DXLink event.",
     category: "Market Data",
     inputSchema: {
       type: "object",
       properties: {
         symbols: { type: "array", items: { type: "string" }, description: "Array of symbols to get quotes for (e.g., ['AAPL', 'TSLA'])" },
         timeoutMs: { type: "number", description: "Timeout in milliseconds to wait for quotes (default 5000)" },
+        detail: { type: "string", enum: ["summary", "standard", "full"], description: "Response detail level: 'summary' (bid, ask, last, symbol), 'standard' (common quote fields, default), 'full' (complete raw DXLink event)" },
       },
       required: ["symbols"],
     },
@@ -506,13 +512,14 @@ const TOOL_REGISTRY: ToolEntry[] = [
   },
   {
     name: "get_options_greeks",
-    description: "Get options Greeks (delta, gamma, theta, vega, rho) by subscribing to Greeks events via DXLink for specific option symbols.",
+    description: "Get options Greeks (delta, gamma, theta, vega, rho) by subscribing to Greeks events via DXLink for specific option symbols. Use 'detail' to control response size: 'summary' returns symbol + 5 Greek values; 'standard' returns Greeks + implied volatility + underlying price (default); 'full' returns the raw DXLink event.",
     category: "Market Data",
     inputSchema: {
       type: "object",
       properties: {
         optionSymbols: { type: "array", items: { type: "string" }, description: "Array of option streamer symbols. Use call-streamer-symbol or put-streamer-symbol from option chain endpoints." },
         timeoutMs: { type: "number", description: "Timeout in milliseconds to wait for Greeks data (default 5000)" },
+        detail: { type: "string", enum: ["summary", "standard", "full"], description: "Response detail level: 'summary' (symbol + delta, gamma, theta, vega, rho), 'standard' (Greeks + implied volatility + underlying price, default), 'full' (complete raw DXLink event)" },
       },
       required: ["optionSymbols"],
     },
