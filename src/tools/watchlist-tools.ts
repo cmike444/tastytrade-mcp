@@ -14,16 +14,15 @@ export function registerWatchlistTools(server: McpServer) {
   server.tool(
     "manage_watchlist",
     [
-      "Manage user account watchlists. Actions:",
-      "  list — Get all user watchlists (no extra params needed).",
+      "Manage user account watchlists. To list all watchlists, use the mcp://watchlists resource instead. Actions:",
       "  get — Get a specific watchlist by name (requires watchlistName).",
       "  create — Create a new watchlist (requires watchlistName and watchlistEntries).",
       "  replace — Replace all properties of an existing watchlist (requires watchlistName and watchlistEntries).",
       "  delete — Delete a watchlist (requires watchlistName).",
     ].join("\n"),
     {
-      action: z.enum(["list", "get", "create", "replace", "delete"]).describe(
-        "Action to perform: 'list' all watchlists, 'get' one by name, 'create' a new one, 'replace' an existing one, or 'delete' one."
+      action: z.enum(["get", "create", "replace", "delete"]).describe(
+        "Action to perform: 'get' one by name, 'create' a new one, 'replace' an existing one, or 'delete' one. To list all watchlists use the mcp://watchlists resource."
       ),
       watchlistName: z.string().optional().describe("Watchlist name — required for get, create, replace, and delete actions."),
       watchlistEntries: z.array(WatchlistEntrySchema).optional().describe(
@@ -36,9 +35,7 @@ export function registerWatchlistTools(server: McpServer) {
         const svc = getClient().watchlistsService;
         let result: any;
 
-        if (action === "list") {
-          result = await svc.getAllWatchlists();
-        } else if (action === "get") {
+        if (action === "get") {
           if (!watchlistName) throw new Error("watchlistName is required for action 'get'");
           result = await svc.getSingleWatchlist(watchlistName);
         } else if (action === "create") {

@@ -45,25 +45,8 @@ function applyPositionProjection(data: any, detail: DetailTier): any {
 
 export function registerBalancePositionTools(server: McpServer) {
   server.tool(
-    "get_account_balances",
-    "Get current balance values for an account including cash, equity, and buying power.",
-    {
-      accountNumber: z.string().describe("The account number to get balances for"),
-    },
-    READ_ONLY,
-    async ({ accountNumber }) => {
-      try {
-        const balances = await getClient().balancesAndPositionsService.getAccountBalanceValues(accountNumber);
-        return { content: [{ type: "text" as const, text: JSON.stringify(balances) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
     "get_positions",
-    "Get all current positions for an account. Can be filtered by symbol or underlying symbol. Use 'detail' to control response size: 'summary' returns 5 key fields per position (symbol, quantity, market-value, instrument-type, average-open-price), 'standard' returns common fields (default), 'full' returns the complete raw API payload.",
+    "Get current positions for an account with optional filtering. For unfiltered balances use the mcp://accounts/{account_id}/balances resource; for unfiltered positions use mcp://accounts/{account_id}/positions resource. This tool adds filtering by symbol or underlying symbol and detail-level projection. Use 'detail' to control response size: 'summary' returns 5 key fields per position (symbol, quantity, market-value, instrument-type, average-open-price), 'standard' returns common fields (default), 'full' returns the complete raw API payload.",
     {
       accountNumber: z.string().describe("The account number to get positions for"),
       symbol: z.string().optional().describe("Filter positions by specific symbol"),

@@ -55,21 +55,8 @@ const TOOL_REGISTRY: ToolEntry[] = [
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
-    name: "get_account_balances",
-    description: "Get current balance values for an account including cash, equity, and buying power.",
-    category: "Account",
-    inputSchema: {
-      type: "object",
-      properties: {
-        accountNumber: { type: "string", description: "The account number to get balances for" },
-      },
-      required: ["accountNumber"],
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  },
-  {
     name: "get_positions",
-    description: "Get all current positions for an account. Can be filtered by symbol or underlying symbol.",
+    description: "Get current positions for an account with optional filtering. For unfiltered balances use mcp://accounts/{account_id}/balances resource; for unfiltered positions use mcp://accounts/{account_id}/positions resource. Supports filtering by symbol or underlying symbol and detail-level projection.",
     category: "Account",
     inputSchema: {
       type: "object",
@@ -77,6 +64,7 @@ const TOOL_REGISTRY: ToolEntry[] = [
         accountNumber: { type: "string", description: "The account number to get positions for" },
         symbol: { type: "string", description: "Filter positions by specific symbol" },
         underlyingSymbol: { type: "string", description: "Filter positions by underlying symbol" },
+        detail: { type: "string", enum: ["summary", "standard", "full"], description: "Response detail level: 'summary' (5 key fields), 'standard' (common fields, default), 'full' (complete raw payload)" },
       },
       required: ["accountNumber"],
     },
@@ -541,15 +529,15 @@ const TOOL_REGISTRY: ToolEntry[] = [
   // ── Watchlists ────────────────────────────────────────────────────────────
   {
     name: "manage_watchlist",
-    description: "Manage user account watchlists. Actions: list (get all), get (by name), create (new watchlist), replace (update existing), delete (remove watchlist).",
+    description: "Manage user account watchlists. To list all watchlists use the mcp://watchlists resource. Actions: get (by name), create (new watchlist), replace (update existing), delete (remove watchlist).",
     category: "Watchlists",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: ["list", "get", "create", "replace", "delete"],
-          description: "Action to perform on user watchlists.",
+          enum: ["get", "create", "replace", "delete"],
+          description: "Action to perform on user watchlists. To list all watchlists use the mcp://watchlists resource.",
         },
         watchlistName: { type: "string", description: "Watchlist name — required for get, create, replace, and delete actions." },
         watchlistEntries: {
