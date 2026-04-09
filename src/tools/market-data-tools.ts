@@ -4,6 +4,21 @@ import { getClient } from "../tastytrade-client.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
+type DetailTier = "summary" | "standard" | "full";
+
+const CANDLE_SUMMARY_FIELDS = ["eventSymbol", "time", "open", "high", "low", "close"];
+const CANDLE_STANDARD_FIELDS = ["eventSymbol", "time", "sequence", "open", "high", "low", "close", "volume", "vwap"];
+
+function projectCandle(item: any, detail: DetailTier): any {
+  if (detail === "full") return item;
+  const fields = detail === "summary" ? CANDLE_SUMMARY_FIELDS : CANDLE_STANDARD_FIELDS;
+  const result: Record<string, any> = {};
+  for (const field of fields) {
+    if (item[field] !== undefined) result[field] = item[field];
+  }
+  return result;
+}
+
 export function registerMarketDataTools(server: McpServer) {
   server.tool(
     "get_market_metrics",
@@ -105,15 +120,17 @@ export function registerMarketDataTools(server: McpServer) {
 
   server.tool(
     "get_candles",
-    "Get candlestick chart data for technical analysis. Retrieves OHLCV candle data via DXLink.",
+    "Get candlestick chart data for technical analysis. Retrieves OHLCV candle data via DXLink. Use 'limit' to cap the number of candles returned (default 100, most-recent candles kept). Use 'detail' to control response size: 'summary' returns 6 OHLC fields, 'standard' returns OHLCV+vwap (default), 'full' returns the complete raw payload.",
     {
       symbol: z.string().describe("The symbol to get candles for (e.g., 'AAPL')"),
       periodMinutes: z.number().default(5).describe("Candle period in minutes (e.g., 1, 5, 15, 30, 60)"),
       daysBack: z.number().default(1).describe("Number of days of historical data to fetch"),
       timeoutMs: z.number().default(8000).describe("Timeout in milliseconds to wait for candle data (default 8000)"),
+      limit: z.number().default(100).describe("Maximum number of candles to return (default 100, most-recent candles kept; set to 0 for no limit)"),
+      detail: z.enum(["summary", "standard", "full"]).default("standard").describe("Response detail level: 'summary' (6 fields: symbol, time, open, high, low, close), 'standard' (OHLCV+vwap, default), 'full' (complete raw payload)"),
     },
     READ_ONLY,
-    async ({ symbol, periodMinutes, daysBack, timeoutMs }) => {
+    async ({ symbol, periodMinutes, daysBack, timeoutMs, limit, detail }) => {
       try {
         const client = getClient();
         const collectedEvents: any[] = [];
@@ -145,7 +162,13 @@ export function registerMarketDataTools(server: McpServer) {
           return { content: [{ type: "text" as const, text: `No candle data received for ${symbol} within ${timeoutMs}ms. Market may be closed.` }] };
         }
 
-        return { content: [{ type: "text" as const, text: JSON.stringify(collectedEvents) }] };
+        let candles = collectedEvents;
+        if (limit > 0 && candles.length > limit) {
+          candles = candles.slice(candles.length - limit);
+        }
+
+        const projected = candles.map(c => projectCandle(c, detail));
+        return { content: [{ type: "text" as const, text: JSON.stringify(projected, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }

@@ -4,6 +4,50 @@ import { getClient } from "../tastytrade-client.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
+type DetailTier = "summary" | "standard" | "full";
+
+const OPTION_CHAIN_SUMMARY_FIELDS = [
+  "symbol", "expiration-date", "option-type", "strike-price", "root-symbol"
+];
+const OPTION_CHAIN_STANDARD_FIELDS = [
+  "symbol", "root-symbol", "underlying-symbol", "expiration-date", "option-type",
+  "strike-price", "expiration-type", "exercise-style", "days-to-expiration",
+  "call-streamer-symbol", "put-streamer-symbol", "active", "listed-market"
+];
+
+function projectOptionChainItem(item: any, detail: DetailTier): any {
+  if (detail === "full") return item;
+  const fields = detail === "summary" ? OPTION_CHAIN_SUMMARY_FIELDS : OPTION_CHAIN_STANDARD_FIELDS;
+  const result: Record<string, any> = {};
+  for (const field of fields) {
+    if (item[field] !== undefined) result[field] = item[field];
+  }
+  return result;
+}
+
+function applyOptionChainProjection(data: any, limit: number, detail: DetailTier): any {
+  if (detail === "full" && limit === 0) return data;
+
+  let items: any[] = [];
+
+  if (Array.isArray(data)) {
+    items = data;
+  } else if (data?.data?.items) {
+    items = data.data.items;
+    const sliced = limit > 0 ? items.slice(0, limit) : items;
+    return { data: { items: sliced.map((i: any) => projectOptionChainItem(i, detail)), pagination: data.data.pagination }, context: data.context };
+  } else if (data?.items) {
+    items = data.items;
+    const sliced = limit > 0 ? items.slice(0, limit) : items;
+    return { items: sliced.map((i: any) => projectOptionChainItem(i, detail)), pagination: data.pagination };
+  } else {
+    return detail === "full" ? data : projectOptionChainItem(data, detail);
+  }
+
+  const sliced = limit > 0 ? items.slice(0, limit) : items;
+  return sliced.map((i: any) => projectOptionChainItem(i, detail));
+}
+
 export function registerInstrumentTools(server: McpServer) {
   server.tool(
     "get_instrument",
@@ -14,7 +58,7 @@ export function registerInstrumentTools(server: McpServer) {
       "  active_equities — All active equities, paginated (optional perPage, pageOffset).",
       "  equity_option — Single equity option by OCC symbol (requires symbol).",
       "  equity_options — Equity options for given symbols (requires symbols array; optional active, withExpired).",
-      "  option_chain — Full option chain for an underlying (requires symbol).",
+      "  option_chain — Full option chain for an underlying (requires symbol). Supports limit and detail parameters.",
       "  nested_option_chain — Option chain grouped by expiration then strike (requires symbol).",
       "  compact_option_chain — Compact option chain to minimize response size (requires symbol).",
       "  future — Single futures contract by symbol e.g. '/ESZ4' (requires symbol).",
@@ -78,9 +122,11 @@ export function registerInstrumentTools(server: McpServer) {
       rootSymbol: z.string().optional().describe("Root symbol for future_option_product (e.g. 'ES')."),
       perPage: z.number().optional().describe("Results per page — used for active_equities."),
       pageOffset: z.number().optional().describe("Page offset for pagination — used for active_equities."),
+      limit: z.number().default(50).describe("For option_chain: maximum number of option records to return (default 50, set to 0 for no limit)."),
+      detail: z.enum(["summary", "standard", "full"]).default("standard").describe("For option_chain: response detail level — 'summary' (5 fields), 'standard' (common trading fields, default), 'full' (complete raw payload)."),
     },
     READ_ONLY,
-    async ({ type, symbol, symbols, lendability, active, withExpired, productCode, exchange, code, rootSymbol, perPage, pageOffset }) => {
+    async ({ type, symbol, symbols, lendability, active, withExpired, productCode, exchange, code, rootSymbol, perPage, pageOffset, limit, detail }) => {
       try {
         const svc = getClient().instrumentsService;
         let result: any;
@@ -162,7 +208,10 @@ export function registerInstrumentTools(server: McpServer) {
           result = await svc.getQuantityDecimalPrecisions();
         }
 
-        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+        if (type === "option_chain") {
+          result = applyOptionChainProjection(result, limit, detail);
+        }
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
