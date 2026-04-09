@@ -15,6 +15,8 @@ import { registerMarketDataTools } from "./tools/market-data-tools.js";
 import { registerTransactionTools } from "./tools/transaction-tools.js";
 import { registerWatchlistTools } from "./tools/watchlist-tools.js";
 import { registerRiskMarginTools } from "./tools/risk-margin-tools.js";
+import { registerAccountResources } from "./resources/account-resources.js";
+import { registerWatchlistResources } from "./resources/watchlist-resources.js";
 import {
   getServerMetadata,
   getProtectedResourceMetadata,
@@ -42,6 +44,8 @@ function createMcpServer(): McpServer {
   registerTransactionTools(server);
   registerWatchlistTools(server);
   registerRiskMarginTools(server);
+  registerAccountResources(server);
+  registerWatchlistResources(server);
 
   return server;
 }
