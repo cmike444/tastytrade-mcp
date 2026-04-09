@@ -300,7 +300,7 @@ const TOOL_REGISTRY: ToolEntry[] = [
   // ── Instruments ───────────────────────────────────────────────────────────
   {
     name: "get_instrument",
-    description: "Look up instrument definitions by type. Supports equities, equity options, option chains, futures, future options, future option chains, cryptocurrencies, warrants, and quantity decimal precisions. Use the 'type' parameter to specify which instrument type to retrieve.",
+    description: "Look up instrument definitions from TastyTrade across all supported asset classes. The 'type' enum selects the instrument class and operation to perform. Each parameter's description lists which types require or accept it.",
     category: "Instruments",
     inputSchema: {
       type: "object",

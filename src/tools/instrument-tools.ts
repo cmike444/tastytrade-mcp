@@ -51,32 +51,7 @@ function applyOptionChainProjection(data: any, limit: number, detail: DetailTier
 export function registerInstrumentTools(server: McpServer) {
   server.tool(
     "get_instrument",
-    [
-      "Look up instrument definitions by type. Supported types:",
-      "  equity — Single equity by symbol (requires symbol).",
-      "  equity_definitions — Equity definitions for one or more symbols (optional symbols array, optional lendability filter).",
-      "  active_equities — All active equities, paginated (optional perPage, pageOffset).",
-      "  equity_option — Single equity option by OCC symbol (requires symbol).",
-      "  equity_options — Equity options for given symbols (requires symbols array; optional active, withExpired).",
-      "  option_chain — Full option chain for an underlying (requires symbol). Supports limit and detail parameters.",
-      "  nested_option_chain — Option chain grouped by expiration then strike (requires symbol).",
-      "  compact_option_chain — Compact option chain to minimize response size (requires symbol).",
-      "  future — Single futures contract by symbol e.g. '/ESZ4' (requires symbol).",
-      "  futures — Multiple futures by symbols or product code (optional symbols array, optional productCode).",
-      "  futures_products — Metadata for all supported futures products (no extra params).",
-      "  future_product — Single futures product by exchange and code (requires exchange, code).",
-      "  future_option — Single future option by TW symbol (requires symbol).",
-      "  future_options — Multiple future options by TW symbols (optional symbols array).",
-      "  future_option_chain — Futures option chain for a product code (requires symbol as product code).",
-      "  nested_future_option_chain — Futures option chain in nested format (requires symbol as product code).",
-      "  future_option_products — Metadata for all supported future option products (no extra params).",
-      "  future_option_product — Single future option product by exchange and root symbol (requires exchange, rootSymbol).",
-      "  cryptocurrency — Single cryptocurrency by symbol e.g. 'BTC/USD' (requires symbol).",
-      "  cryptocurrencies — Multiple cryptocurrencies (optional symbols array).",
-      "  warrant — Single warrant by symbol (requires symbol).",
-      "  warrants — Multiple warrants (optional symbols array).",
-      "  quantity_decimal_precisions — All quantity decimal precisions (no extra params).",
-    ].join("\n"),
+    "Look up instrument definitions from TastyTrade across all supported asset classes. The 'type' enum selects the instrument class and operation to perform. Each parameter's description lists which types require or accept it.",
     {
       type: z.enum([
         "equity",
@@ -103,7 +78,7 @@ export function registerInstrumentTools(server: McpServer) {
         "warrants",
         "quantity_decimal_precisions",
       ]).describe(
-        "The instrument type/operation to look up. See tool description for required parameters per type."
+        "Instrument class and operation to perform. Each parameter's description lists which types require or accept it."
       ),
       symbol: z.string().optional().describe(
         "Symbol for the instrument. Required for: equity, equity_option, option_chain, nested_option_chain, compact_option_chain, future, future_option, future_option_chain, nested_future_option_chain, cryptocurrency, warrant."
