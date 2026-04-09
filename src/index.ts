@@ -4,6 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import express from "express";
+import type { ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { registerAuthTools } from "./tools/auth-tools.js";
 import { registerAccountTools } from "./tools/account-tools.js";
@@ -35,6 +36,10 @@ function createMcpServer(): McpServer {
     version: "1.0.0",
   });
 
+  // Tools are registered in a fixed deterministic order on every startup.
+  // This ensures the tool list schema is identical across sessions, which is
+  // required for Anthropic prompt caching: the provider caches the tool
+  // definitions prefix when it receives identical content on consecutive turns.
   registerAuthTools(server);
   registerAccountTools(server);
   registerBalancePositionTools(server);
@@ -52,6 +57,30 @@ function createMcpServer(): McpServer {
 
 const BEARER_TOKEN = process.env.MCP_BEARER_TOKEN;
 const MODE = process.env.MCP_TRANSPORT || "stdio";
+
+/**
+ * Wraps `res.writeHead` to inject a Cache-Control header into any response
+ * written by the MCP transport (which writes headers internally via the Hono
+ * Node adapter, bypassing Express header helpers).  Must be called before the
+ * transport's `handleRequest` to take effect.
+ */
+function injectCacheControlHeader(res: express.Response, value: string): void {
+  const original = (res as unknown as ServerResponse).writeHead.bind(res);
+  (res as unknown as ServerResponse).writeHead = function (
+    statusCode: number,
+    ...args: any[]
+  ): ServerResponse {
+    if (!res.headersSent) {
+      const lastArg = args[args.length - 1];
+      if (lastArg && typeof lastArg === "object" && !Array.isArray(lastArg)) {
+        lastArg["Cache-Control"] = lastArg["Cache-Control"] ?? value;
+      } else {
+        args.push({ "Cache-Control": value });
+      }
+    }
+    return original(statusCode, ...args);
+  } as typeof original;
+}
 
 function getBaseUrl(req: express.Request): string {
   const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
@@ -104,11 +133,13 @@ async function startHttpServer() {
 
   app.get("/.well-known/oauth-protected-resource", (req, res) => {
     const baseUrl = getBaseUrl(req);
+    res.set("Cache-Control", "public, max-age=3600");
     res.json(getProtectedResourceMetadata(`${baseUrl}/mcp`, baseUrl));
   });
 
   app.get("/.well-known/oauth-authorization-server", (req, res) => {
     const baseUrl = getBaseUrl(req);
+    res.set("Cache-Control", "public, max-age=3600");
     res.json(getServerMetadata(baseUrl));
   });
 
@@ -251,11 +282,17 @@ async function startHttpServer() {
   });
 
   app.get("/health", (_req, res) => {
+    res.set("Cache-Control", "no-store");
     res.json({ status: "ok", transport: "streamable-http", tools: 35, oauth: true });
   });
 
   app.post("/mcp", async (req, res) => {
     if (!authenticateRequest(req, res)) return;
+
+    // MCP responses must not be cached by HTTP intermediaries: tool call results
+    // contain dynamic financial data.  Prompt-level caching (Anthropic/OpenAI)
+    // is achieved through deterministic tool ordering, not HTTP caching.
+    injectCacheControlHeader(res, "no-store");
 
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
 
@@ -289,6 +326,9 @@ async function startHttpServer() {
   app.get("/mcp", async (req, res) => {
     if (!authenticateRequest(req, res)) return;
 
+    // SSE streams are inherently non-cacheable.
+    injectCacheControlHeader(res, "no-store");
+
     const sessionId = req.headers["mcp-session-id"] as string;
     const session = sessions[sessionId];
 
@@ -302,6 +342,8 @@ async function startHttpServer() {
 
   app.delete("/mcp", async (req, res) => {
     if (!authenticateRequest(req, res)) return;
+
+    res.set("Cache-Control", "no-store");
 
     const sessionId = req.headers["mcp-session-id"] as string;
     const session = sessions[sessionId];

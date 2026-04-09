@@ -257,6 +257,64 @@ For remote MCP clients like ChatGPT, the server includes a built-in OAuth 2.1 au
 
 ---
 
+## Prompt Caching
+
+Anthropic and OpenAI both support **prompt caching**: when the tool definitions sent to the model are identical between consecutive turns, the provider caches the schema computation and charges a fraction of the normal rate on subsequent requests. With 73 tools (approximately 12,000–15,000 tokens of schema overhead), caching can reduce per-turn token costs by **50–90%** in multi-turn conversations.
+
+### How it works with this server
+
+This server is designed so that tool definitions are always emitted in the **same deterministic order** on every startup:
+
+1. Auth tools
+2. Account tools
+3. Balance & position tools
+4. Order tools
+5. Instrument tools
+6. Market data tools
+7. Transaction tools
+8. Watchlist tools
+9. Risk & margin tools
+
+Because the order never changes, MCP clients that forward the tool list to Anthropic or OpenAI will send an identical schema prefix on every request within and across sessions, allowing the provider to serve the schema from its cache.
+
+### Verifying caching is active (Anthropic)
+
+When you use Claude through the Anthropic API with tool definitions, the response includes usage statistics. Look for a non-zero `cache_read_input_tokens` field:
+
+```json
+{
+  "usage": {
+    "input_tokens": 512,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 14203
+  }
+}
+```
+
+A non-zero `cache_read_input_tokens` value confirms that the tool schema was served from Anthropic's prompt cache. On the first request in a new cache window, you will see `cache_creation_input_tokens` instead — this is the one-time cost to seed the cache.
+
+### HTTP Cache-Control headers
+
+The server sets the following `Cache-Control` headers on each response type:
+
+| Endpoint | Header | Reason |
+|---|---|---|
+| `/.well-known/oauth-protected-resource` | `public, max-age=3600` | Stable OAuth metadata |
+| `/.well-known/oauth-authorization-server` | `public, max-age=3600` | Stable OAuth metadata |
+| `POST /mcp` | `no-store` | Dynamic tool calls may contain sensitive financial data |
+| `GET /mcp` (SSE) | `no-store` | Live server-sent event streams are non-cacheable |
+| `DELETE /mcp` | `no-store` | Session teardown responses are not cacheable |
+| `/health` | `no-store` | Live server status |
+
+### Client-side requirements
+
+Prompt caching is handled by the **client application**, not this server. The current MCP SDK does not expose an API to inject provider-specific `cache_control` annotations (e.g. Anthropic's `{"type": "ephemeral"}`) into the tool list at the protocol level — this lives in the LLM API request assembled by the client. To enable caching:
+
+- **Anthropic API**: Add `{"type": "ephemeral"}` as a `cache_control` annotation to the last tool definition in the list you send to the Anthropic API. The stable, deterministic ordering of the tool schema from this server ensures the content hash matches on every turn.
+- **OpenAI API**: Prompt caching is automatic for prompts over 1,024 tokens; no extra configuration is needed.
+
+---
+
 ## Deploying on Replit
 
 This project is configured for deployment on Replit as an always-on VM:
