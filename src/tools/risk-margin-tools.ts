@@ -15,7 +15,7 @@ export function registerRiskMarginTools(server: McpServer) {
     async ({ accountNumber }) => {
       try {
         const margin = await getClient().marginRequirementsService.getMarginRequirements(accountNumber);
-        return { content: [{ type: "text" as const, text: JSON.stringify(margin, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(margin) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -34,7 +34,7 @@ export function registerRiskMarginTools(server: McpServer) {
       try {
         const order = JSON.parse(orderJson);
         const margin = await getClient().marginRequirementsService.postMarginRequirements(accountNumber, order);
-        return { content: [{ type: "text" as const, text: JSON.stringify(margin, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(margin) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -52,7 +52,7 @@ export function registerRiskMarginTools(server: McpServer) {
     async ({ accountNumber, underlyingSymbol }) => {
       try {
         const margin = await getClient().riskParametersService.getEffectiveMarginRequirements(accountNumber, underlyingSymbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(margin, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(margin) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -69,7 +69,7 @@ export function registerRiskMarginTools(server: McpServer) {
     async ({ accountNumber }) => {
       try {
         const limit = await getClient().riskParametersService.getPositionLimit(accountNumber);
-        return { content: [{ type: "text" as const, text: JSON.stringify(limit, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(limit) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -89,7 +89,7 @@ export function registerRiskMarginTools(server: McpServer) {
         const queryParams: Record<string, any> = {};
         if (timeBack) queryParams["time-back"] = timeBack;
         const history = await getClient().netLiquidatingValueHistoryService.getNetLiquidatingValueHistory(accountNumber, queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(history, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(history) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -106,7 +106,7 @@ export function registerRiskMarginTools(server: McpServer) {
     async ({ accountNumber }) => {
       try {
         const value = await getClient().netLiquidatingValueHistoryService.getNetLiquidatingValue(accountNumber);
-        return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(value) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }

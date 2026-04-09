@@ -14,7 +14,7 @@ export function registerWatchlistTools(server: McpServer) {
     async () => {
       try {
         const watchlists = await getClient().watchlistsService.getAllWatchlists();
-        return { content: [{ type: "text" as const, text: JSON.stringify(watchlists, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(watchlists) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -31,7 +31,7 @@ export function registerWatchlistTools(server: McpServer) {
     async ({ watchlistName }) => {
       try {
         const watchlist = await getClient().watchlistsService.getSingleWatchlist(watchlistName);
-        return { content: [{ type: "text" as const, text: JSON.stringify(watchlist, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(watchlist) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -49,7 +49,7 @@ export function registerWatchlistTools(server: McpServer) {
       try {
         const watchlist = JSON.parse(watchlistJson);
         const result = await getClient().watchlistsService.createAccountWatchlist(watchlist);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -68,7 +68,7 @@ export function registerWatchlistTools(server: McpServer) {
       try {
         const watchlist = JSON.parse(watchlistJson);
         const result = await getClient().watchlistsService.replaceWatchlist(watchlistName, watchlist);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -85,7 +85,7 @@ export function registerWatchlistTools(server: McpServer) {
     async ({ watchlistName }) => {
       try {
         const result = await getClient().watchlistsService.deleteWatchlist(watchlistName);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -102,7 +102,7 @@ export function registerWatchlistTools(server: McpServer) {
     async ({ countsOnly }) => {
       try {
         const watchlists = await getClient().watchlistsService.getPublicWatchlists(countsOnly);
-        return { content: [{ type: "text" as const, text: JSON.stringify(watchlists, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(watchlists) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -119,7 +119,7 @@ export function registerWatchlistTools(server: McpServer) {
     async ({ watchlistName }) => {
       try {
         const watchlist = await getClient().watchlistsService.getPublicWatchlist(watchlistName);
-        return { content: [{ type: "text" as const, text: JSON.stringify(watchlist, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(watchlist) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -134,7 +134,7 @@ export function registerWatchlistTools(server: McpServer) {
     async () => {
       try {
         const watchlists = await getClient().watchlistsService.getPairsWatchlists();
-        return { content: [{ type: "text" as const, text: JSON.stringify(watchlists, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(watchlists) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -151,7 +151,7 @@ export function registerWatchlistTools(server: McpServer) {
     async ({ pairsWatchlistName }) => {
       try {
         const watchlist = await getClient().watchlistsService.getPairsWatchlist(pairsWatchlistName);
-        return { content: [{ type: "text" as const, text: JSON.stringify(watchlist, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(watchlist) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }

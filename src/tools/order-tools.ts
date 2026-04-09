@@ -16,7 +16,7 @@ export function registerOrderTools(server: McpServer) {
     async ({ accountNumber }) => {
       try {
         const orders = await getClient().orderService.getLiveOrders(accountNumber);
-        return { content: [{ type: "text" as const, text: JSON.stringify(orders, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(orders) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -40,7 +40,7 @@ export function registerOrderTools(server: McpServer) {
         if (pageOffset) queryParams["page-offset"] = pageOffset;
         if (status) queryParams.status = status;
         const orders = await getClient().orderService.getOrders(accountNumber, queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(orders, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(orders) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -58,7 +58,7 @@ export function registerOrderTools(server: McpServer) {
     async ({ accountNumber, orderId }) => {
       try {
         const order = await getClient().orderService.getOrder(accountNumber, orderId);
-        return { content: [{ type: "text" as const, text: JSON.stringify(order, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(order) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -77,7 +77,7 @@ export function registerOrderTools(server: McpServer) {
       try {
         const order = JSON.parse(orderJson);
         const result = await getClient().orderService.createOrder(accountNumber, order);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -96,7 +96,7 @@ export function registerOrderTools(server: McpServer) {
       try {
         const order = JSON.parse(orderJson);
         const result = await getClient().orderService.postOrderDryRun(accountNumber, order);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -114,7 +114,7 @@ export function registerOrderTools(server: McpServer) {
     async ({ accountNumber, orderId }) => {
       try {
         const result = await getClient().orderService.cancelOrder(accountNumber, orderId);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -134,7 +134,7 @@ export function registerOrderTools(server: McpServer) {
       try {
         const replacementOrder = JSON.parse(replacementOrderJson);
         const result = await getClient().orderService.replaceOrder(accountNumber, orderId, replacementOrder);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -154,7 +154,7 @@ export function registerOrderTools(server: McpServer) {
       try {
         const edit = JSON.parse(editJson);
         const result = await getClient().orderService.editOrder(accountNumber, orderId, edit);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -173,7 +173,7 @@ export function registerOrderTools(server: McpServer) {
       try {
         const order = JSON.parse(orderJson);
         const result = await getClient().orderService.createComplexOrder(accountNumber, order);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -191,7 +191,7 @@ export function registerOrderTools(server: McpServer) {
     async ({ accountNumber, orderId }) => {
       try {
         const result = await getClient().orderService.cancelComplexOrder(accountNumber, orderId);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -209,7 +209,7 @@ export function registerOrderTools(server: McpServer) {
     async ({ accountNumber, orderId }) => {
       try {
         const result = await getClient().orderService.postReconfirmOrder(accountNumber, orderId);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -229,7 +229,7 @@ export function registerOrderTools(server: McpServer) {
       try {
         const replacementOrder = JSON.parse(replacementOrderJson);
         const result = await getClient().orderService.replacementOrderDryRun(accountNumber, orderId, replacementOrder);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -246,7 +246,7 @@ export function registerOrderTools(server: McpServer) {
     async ({ customerId }) => {
       try {
         const orders = await getClient().orderService.getLiveOrdersForCustomer(customerId);
-        return { content: [{ type: "text" as const, text: JSON.stringify(orders, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(orders) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -268,7 +268,7 @@ export function registerOrderTools(server: McpServer) {
         if (perPage) queryParams["per-page"] = perPage;
         if (pageOffset) queryParams["page-offset"] = pageOffset;
         const orders = await getClient().orderService.getCustomerOrders(customerId, queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(orders, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(orders) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }

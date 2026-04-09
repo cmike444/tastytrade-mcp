@@ -32,7 +32,7 @@ export function registerTransactionTools(server: McpServer) {
         if (endDate) queryParams["end-date"] = endDate;
         if (symbol) queryParams.symbol = symbol;
         const transactions = await getClient().transactionsService.getAccountTransactions(accountNumber, queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(transactions, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(transactions) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -50,7 +50,7 @@ export function registerTransactionTools(server: McpServer) {
     async ({ accountNumber, transactionId }) => {
       try {
         const transaction = await getClient().transactionsService.getTransaction(accountNumber, transactionId);
-        return { content: [{ type: "text" as const, text: JSON.stringify(transaction, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(transaction) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -67,7 +67,7 @@ export function registerTransactionTools(server: McpServer) {
     async ({ accountNumber }) => {
       try {
         const fees = await getClient().transactionsService.getTotalFees(accountNumber);
-        return { content: [{ type: "text" as const, text: JSON.stringify(fees, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(fees) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }

@@ -15,7 +15,7 @@ export function registerBalancePositionTools(server: McpServer) {
     async ({ accountNumber }) => {
       try {
         const balances = await getClient().balancesAndPositionsService.getAccountBalanceValues(accountNumber);
-        return { content: [{ type: "text" as const, text: JSON.stringify(balances, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(balances) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -37,7 +37,7 @@ export function registerBalancePositionTools(server: McpServer) {
         if (symbol) queryParams.symbol = symbol;
         if (underlyingSymbol) queryParams["underlying-symbol"] = underlyingSymbol;
         const positions = await getClient().balancesAndPositionsService.getPositionsList(accountNumber, queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(positions, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(positions) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -57,7 +57,7 @@ export function registerBalancePositionTools(server: McpServer) {
         const queryParams: Record<string, any> = {};
         if (timeOfDay) queryParams["time-of-day"] = timeOfDay;
         const snapshots = await getClient().balancesAndPositionsService.getBalanceSnapshots(accountNumber, queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(snapshots, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(snapshots) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }

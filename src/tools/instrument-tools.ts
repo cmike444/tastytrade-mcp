@@ -15,7 +15,7 @@ export function registerInstrumentTools(server: McpServer) {
     async ({ symbol }) => {
       try {
         const equity = await getClient().instrumentsService.getSingleEquity(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(equity, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(equity) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -36,7 +36,7 @@ export function registerInstrumentTools(server: McpServer) {
         if (symbols) queryParams.symbol = symbols;
         if (lendability) queryParams.lendability = lendability;
         const equities = await getClient().instrumentsService.getEquityDefinitions(queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(equities, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(equities) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -57,7 +57,7 @@ export function registerInstrumentTools(server: McpServer) {
         if (perPage) queryParams["per-page"] = perPage;
         if (pageOffset) queryParams["page-offset"] = pageOffset;
         const equities = await getClient().instrumentsService.getActiveEquities(queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(equities, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(equities) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -76,7 +76,7 @@ export function registerInstrumentTools(server: McpServer) {
     async ({ symbols, active, withExpired }) => {
       try {
         const options = await getClient().instrumentsService.getEquityOptions(symbols, active, withExpired);
-        return { content: [{ type: "text" as const, text: JSON.stringify(options, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(options) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -93,7 +93,7 @@ export function registerInstrumentTools(server: McpServer) {
     async ({ symbol }) => {
       try {
         const option = await getClient().instrumentsService.getSingleEquityOption(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(option, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(option) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -110,7 +110,7 @@ export function registerInstrumentTools(server: McpServer) {
     async ({ symbol }) => {
       try {
         const chain = await getClient().instrumentsService.getOptionChain(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(chain, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(chain) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -127,7 +127,7 @@ export function registerInstrumentTools(server: McpServer) {
     async ({ symbol }) => {
       try {
         const chain = await getClient().instrumentsService.getNestedOptionChain(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(chain, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(chain) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -144,7 +144,7 @@ export function registerInstrumentTools(server: McpServer) {
     async ({ symbol }) => {
       try {
         const chain = await getClient().instrumentsService.getCompactOptionChain(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(chain, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(chain) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -165,7 +165,7 @@ export function registerInstrumentTools(server: McpServer) {
         if (symbols) queryParams.symbol = symbols;
         if (productCode) queryParams["product-code"] = productCode;
         const futures = await getClient().instrumentsService.getFutures(queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(futures, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(futures) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -182,7 +182,7 @@ export function registerInstrumentTools(server: McpServer) {
     async ({ symbol }) => {
       try {
         const future = await getClient().instrumentsService.getSingleFuture(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(future, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(future) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -199,7 +199,7 @@ export function registerInstrumentTools(server: McpServer) {
     async ({ symbol }) => {
       try {
         const chain = await getClient().instrumentsService.getFutureOptionChain(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(chain, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(chain) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -216,7 +216,7 @@ export function registerInstrumentTools(server: McpServer) {
     async ({ symbol }) => {
       try {
         const chain = await getClient().instrumentsService.getNestedFutureOptionChains(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(chain, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(chain) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -235,7 +235,7 @@ export function registerInstrumentTools(server: McpServer) {
         const queryParams: Record<string, any> = {};
         if (symbols) queryParams.symbol = symbols;
         const options = await getClient().instrumentsService.getFutureOptions(queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(options, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(options) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -252,7 +252,7 @@ export function registerInstrumentTools(server: McpServer) {
     async ({ symbol }) => {
       try {
         const option = await getClient().instrumentsService.getSingleFutureOption(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(option, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(option) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -267,7 +267,7 @@ export function registerInstrumentTools(server: McpServer) {
     async () => {
       try {
         const products = await getClient().instrumentsService.getFuturesProducts();
-        return { content: [{ type: "text" as const, text: JSON.stringify(products, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(products) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -285,7 +285,7 @@ export function registerInstrumentTools(server: McpServer) {
     async ({ exchange, code }) => {
       try {
         const product = await getClient().instrumentsService.getSingleFutureProduct(exchange, code);
-        return { content: [{ type: "text" as const, text: JSON.stringify(product, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(product) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -300,7 +300,7 @@ export function registerInstrumentTools(server: McpServer) {
     async () => {
       try {
         const products = await getClient().instrumentsService.getFutureOptionsProducts();
-        return { content: [{ type: "text" as const, text: JSON.stringify(products, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(products) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -318,7 +318,7 @@ export function registerInstrumentTools(server: McpServer) {
     async ({ exchange, rootSymbol }) => {
       try {
         const product = await getClient().instrumentsService.getSingleFutureOptionProduct(exchange, rootSymbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(product, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(product) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -335,7 +335,7 @@ export function registerInstrumentTools(server: McpServer) {
     async ({ symbols }) => {
       try {
         const cryptos = await getClient().instrumentsService.getCryptocurrencies(symbols || []);
-        return { content: [{ type: "text" as const, text: JSON.stringify(cryptos, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(cryptos) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -352,7 +352,7 @@ export function registerInstrumentTools(server: McpServer) {
     async ({ symbol }) => {
       try {
         const crypto = await getClient().instrumentsService.getSingleCryptocurrency(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(crypto, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(crypto) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -371,7 +371,7 @@ export function registerInstrumentTools(server: McpServer) {
         const queryParams: Record<string, any> = {};
         if (symbols) queryParams.symbol = symbols;
         const warrants = await getClient().instrumentsService.getWarrants(queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(warrants, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(warrants) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -388,7 +388,7 @@ export function registerInstrumentTools(server: McpServer) {
     async ({ symbol }) => {
       try {
         const warrant = await getClient().instrumentsService.getSingleWarrant(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(warrant, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(warrant) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -403,7 +403,7 @@ export function registerInstrumentTools(server: McpServer) {
     async () => {
       try {
         const precisions = await getClient().instrumentsService.getQuantityDecimalPrecisions();
-        return { content: [{ type: "text" as const, text: JSON.stringify(precisions, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(precisions) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -420,7 +420,7 @@ export function registerInstrumentTools(server: McpServer) {
     async ({ query }) => {
       try {
         const results = await getClient().symbolSearchService.getSymbolData(query);
-        return { content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(results) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }

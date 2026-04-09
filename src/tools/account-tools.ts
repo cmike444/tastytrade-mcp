@@ -13,7 +13,7 @@ export function registerAccountTools(server: McpServer) {
     async () => {
       try {
         const accounts = await getClient().accountsAndCustomersService.getCustomerAccounts();
-        return { content: [{ type: "text" as const, text: JSON.stringify(accounts, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(accounts) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -28,7 +28,7 @@ export function registerAccountTools(server: McpServer) {
     async () => {
       try {
         const customer = await getClient().accountsAndCustomersService.getCustomerResource();
-        return { content: [{ type: "text" as const, text: JSON.stringify(customer, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(customer) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -45,7 +45,7 @@ export function registerAccountTools(server: McpServer) {
     async ({ accountNumber }) => {
       try {
         const account = await getClient().accountsAndCustomersService.getFullCustomerAccountResource(accountNumber);
-        return { content: [{ type: "text" as const, text: JSON.stringify(account, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(account) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -62,7 +62,7 @@ export function registerAccountTools(server: McpServer) {
     async ({ accountNumber }) => {
       try {
         const status = await getClient().accountStatusService.getAccountStatus(accountNumber);
-        return { content: [{ type: "text" as const, text: JSON.stringify(status, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(status) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }

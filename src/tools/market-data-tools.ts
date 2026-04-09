@@ -16,7 +16,7 @@ export function registerMarketDataTools(server: McpServer) {
       try {
         const queryParams = { symbols: symbols.join(",") };
         const metrics = await getClient().marketMetricsService.getMarketMetrics(queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(metrics, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(metrics) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -33,7 +33,7 @@ export function registerMarketDataTools(server: McpServer) {
     async ({ symbol }) => {
       try {
         const dividends = await getClient().marketMetricsService.getHistoricalDividendData(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(dividends, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(dividends) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -53,7 +53,7 @@ export function registerMarketDataTools(server: McpServer) {
         const queryParams: Record<string, any> = {};
         if (startDate) queryParams["start-date"] = startDate;
         const earnings = await getClient().marketMetricsService.getHistoricalEarningsData(symbol, queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(earnings, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(earnings) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -96,7 +96,7 @@ export function registerMarketDataTools(server: McpServer) {
           return { content: [{ type: "text" as const, text: `No quote data received for ${symbols.join(', ')} within ${timeoutMs}ms. Market may be closed or symbols may be invalid.` }] };
         }
 
-        return { content: [{ type: "text" as const, text: JSON.stringify(collectedEvents, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(collectedEvents) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -145,7 +145,7 @@ export function registerMarketDataTools(server: McpServer) {
           return { content: [{ type: "text" as const, text: `No candle data received for ${symbol} within ${timeoutMs}ms. Market may be closed.` }] };
         }
 
-        return { content: [{ type: "text" as const, text: JSON.stringify(collectedEvents, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(collectedEvents) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -201,7 +201,7 @@ export function registerMarketDataTools(server: McpServer) {
           return { content: [{ type: "text" as const, text: `No Greeks/quote data received for the provided option symbols within ${timeoutMs}ms. Verify the option symbols are valid streamer symbols.` }] };
         }
 
-        return { content: [{ type: "text" as const, text: JSON.stringify(resultData, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(resultData) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -216,7 +216,7 @@ export function registerMarketDataTools(server: McpServer) {
     async () => {
       try {
         const token = await getClient().accountsAndCustomersService.getApiQuoteToken();
-        return { content: [{ type: "text" as const, text: JSON.stringify(token, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(token) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
