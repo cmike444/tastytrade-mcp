@@ -5,6 +5,11 @@ import { getClient } from "../tastytrade-client.js";
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 const DESTRUCTIVE = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false } as const;
 
+const WatchlistEntrySchema = z.object({
+  symbol: z.string().describe("The instrument symbol (e.g. 'AAPL', 'SPY')"),
+  "instrument-type": z.string().describe("Instrument type (e.g. 'Equity', 'Equity Option', 'Future', 'Cryptocurrency')"),
+});
+
 export function registerWatchlistTools(server: McpServer) {
   server.tool(
     "manage_watchlist",
@@ -12,21 +17,21 @@ export function registerWatchlistTools(server: McpServer) {
       "Manage user account watchlists. Actions:",
       "  list — Get all user watchlists (no extra params needed).",
       "  get — Get a specific watchlist by name (requires watchlistName).",
-      "  create — Create a new watchlist (requires watchlistJson with name and watchlist-entries).",
-      "  replace — Replace all properties of an existing watchlist (requires watchlistName and watchlistJson).",
+      "  create — Create a new watchlist (requires watchlistName and watchlistEntries).",
+      "  replace — Replace all properties of an existing watchlist (requires watchlistName and watchlistEntries).",
       "  delete — Delete a watchlist (requires watchlistName).",
     ].join("\n"),
     {
       action: z.enum(["list", "get", "create", "replace", "delete"]).describe(
         "Action to perform: 'list' all watchlists, 'get' one by name, 'create' a new one, 'replace' an existing one, or 'delete' one."
       ),
-      watchlistName: z.string().optional().describe("Watchlist name — required for get, replace, and delete actions."),
-      watchlistJson: z.string().optional().describe(
-        "JSON string of watchlist object — required for create (include name and watchlist-entries) and replace actions."
+      watchlistName: z.string().optional().describe("Watchlist name — required for get, create, replace, and delete actions."),
+      watchlistEntries: z.array(WatchlistEntrySchema).optional().describe(
+        "Array of watchlist entries (each with symbol and instrument-type) — required for create and replace actions."
       ),
     },
     READ_ONLY,
-    async ({ action, watchlistName, watchlistJson }) => {
+    async ({ action, watchlistName, watchlistEntries }) => {
       try {
         const svc = getClient().watchlistsService;
         let result: any;
@@ -37,12 +42,21 @@ export function registerWatchlistTools(server: McpServer) {
           if (!watchlistName) throw new Error("watchlistName is required for action 'get'");
           result = await svc.getSingleWatchlist(watchlistName);
         } else if (action === "create") {
-          if (!watchlistJson) throw new Error("watchlistJson is required for action 'create'");
-          result = await svc.createAccountWatchlist(JSON.parse(watchlistJson));
+          if (!watchlistName) throw new Error("watchlistName is required for action 'create'");
+          if (!watchlistEntries) throw new Error("watchlistEntries is required for action 'create'");
+          const watchlistObj = {
+            name: watchlistName,
+            "watchlist-entries": watchlistEntries,
+          };
+          result = await svc.createAccountWatchlist(watchlistObj);
         } else if (action === "replace") {
           if (!watchlistName) throw new Error("watchlistName is required for action 'replace'");
-          if (!watchlistJson) throw new Error("watchlistJson is required for action 'replace'");
-          result = await svc.replaceWatchlist(watchlistName, JSON.parse(watchlistJson));
+          if (!watchlistEntries) throw new Error("watchlistEntries is required for action 'replace'");
+          const watchlistObj = {
+            name: watchlistName,
+            "watchlist-entries": watchlistEntries,
+          };
+          result = await svc.replaceWatchlist(watchlistName, watchlistObj);
         } else if (action === "delete") {
           if (!watchlistName) throw new Error("watchlistName is required for action 'delete'");
           result = await svc.deleteWatchlist(watchlistName);

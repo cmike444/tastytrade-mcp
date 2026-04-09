@@ -5,6 +5,52 @@ import { getClient } from "../tastytrade-client.js";
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 const DESTRUCTIVE = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true } as const;
 
+const OrderLegSchema = z.object({
+  "instrument-type": z.string().describe("Instrument type (e.g. 'Equity', 'Equity Option', 'Future', 'Future Option')"),
+  symbol: z.string().describe("Symbol for the instrument (e.g. 'AAPL', 'AAPL  250117C00200000')"),
+  action: z.string().describe("Order action (e.g. 'Buy to Open', 'Sell to Open', 'Buy to Close', 'Sell to Close')"),
+  quantity: z.number().describe("Number of contracts or shares"),
+  "ratio-quantity": z.number().optional().describe("Ratio quantity for complex orders"),
+});
+
+const OrderSchema = z.object({
+  "time-in-force": z.string().describe("Time in force (e.g. 'Day', 'GTC', 'GTD', 'Ext', 'GTC Ext', 'IOC')"),
+  "order-type": z.string().describe("Order type (e.g. 'Limit', 'Market', 'Stop', 'Stop Limit', 'Notional Market')"),
+  price: z.number().optional().describe("Limit price for the order (required for Limit and Stop Limit orders)"),
+  "price-effect": z.string().optional().describe("Price effect: 'Debit' (buying) or 'Credit' (selling)"),
+  legs: z.array(OrderLegSchema).describe("Array of order legs"),
+});
+
+const ReplacementOrderSchema = z.object({
+  "time-in-force": z.string().describe("Time in force (e.g. 'Day', 'GTC', 'GTD', 'Ext', 'GTC Ext', 'IOC')"),
+  "order-type": z.string().describe("Order type (e.g. 'Limit', 'Market', 'Stop', 'Stop Limit')"),
+  price: z.number().optional().describe("Limit price for the replacement order"),
+  "price-effect": z.string().optional().describe("Price effect: 'Debit' or 'Credit'"),
+  legs: z.array(OrderLegSchema).describe("Array of order legs"),
+});
+
+const OrderEditSchema = z.object({
+  price: z.number().describe("New limit price for the order"),
+  "price-effect": z.string().optional().describe("Price effect: 'Debit' or 'Credit'"),
+});
+
+const ComplexOrderLegSchema = z.object({
+  "instrument-type": z.string().describe("Instrument type (e.g. 'Equity Option', 'Future Option')"),
+  symbol: z.string().describe("Symbol for the instrument"),
+  action: z.string().describe("Order action (e.g. 'Buy to Open', 'Sell to Open', 'Buy to Close', 'Sell to Close')"),
+  quantity: z.number().describe("Number of contracts"),
+  "ratio-quantity": z.number().optional().describe("Ratio quantity for this leg"),
+});
+
+const ComplexOrderSchema = z.object({
+  "time-in-force": z.string().describe("Time in force (e.g. 'Day', 'GTC')"),
+  "order-type": z.string().describe("Order type (e.g. 'Limit', 'Market', 'Net Credit', 'Net Debit')"),
+  price: z.number().optional().describe("Net price for the complex order"),
+  "price-effect": z.string().optional().describe("Price effect: 'Debit' or 'Credit'"),
+  legs: z.array(ComplexOrderLegSchema).describe("Array of order legs for the complex order"),
+  "source": z.string().optional().describe("Optional source identifier"),
+});
+
 export function registerOrderTools(server: McpServer) {
   server.tool(
     "query_orders",
@@ -77,12 +123,16 @@ export function registerOrderTools(server: McpServer) {
     "Validate an order without actually placing it. Returns preflight information including fees, buying power effect, and warnings.",
     {
       accountNumber: z.string().describe("The account number"),
-      orderJson: z.string().describe("JSON string of the order object to validate"),
+      "time-in-force": OrderSchema.shape["time-in-force"],
+      "order-type": OrderSchema.shape["order-type"],
+      price: OrderSchema.shape.price,
+      "price-effect": OrderSchema.shape["price-effect"],
+      legs: OrderSchema.shape.legs,
     },
     READ_ONLY,
-    async ({ accountNumber, orderJson }) => {
+    async ({ accountNumber, ...orderFields }) => {
       try {
-        const order = JSON.parse(orderJson);
+        const order = orderFields;
         const result = await getClient().orderService.postOrderDryRun(accountNumber, order);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
@@ -97,12 +147,16 @@ export function registerOrderTools(server: McpServer) {
     {
       accountNumber: z.string().describe("The account number"),
       orderId: z.number().describe("The order ID to check replacement for"),
-      replacementOrderJson: z.string().describe("JSON string of the replacement order"),
+      "time-in-force": ReplacementOrderSchema.shape["time-in-force"],
+      "order-type": ReplacementOrderSchema.shape["order-type"],
+      price: ReplacementOrderSchema.shape.price,
+      "price-effect": ReplacementOrderSchema.shape["price-effect"],
+      legs: ReplacementOrderSchema.shape.legs,
     },
     READ_ONLY,
-    async ({ accountNumber, orderId, replacementOrderJson }) => {
+    async ({ accountNumber, orderId, ...replacementFields }) => {
       try {
-        const replacementOrder = JSON.parse(replacementOrderJson);
+        const replacementOrder = replacementFields;
         const result = await getClient().orderService.replacementOrderDryRun(accountNumber, orderId, replacementOrder);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
@@ -116,12 +170,16 @@ export function registerOrderTools(server: McpServer) {
     "Create and submit a new order. Use order_dry_run first to validate.",
     {
       accountNumber: z.string().describe("The account number to place the order in"),
-      orderJson: z.string().describe("JSON string of the order object with fields like time-in-force, order-type, legs, price, etc."),
+      "time-in-force": OrderSchema.shape["time-in-force"],
+      "order-type": OrderSchema.shape["order-type"],
+      price: OrderSchema.shape.price,
+      "price-effect": OrderSchema.shape["price-effect"],
+      legs: OrderSchema.shape.legs,
     },
     DESTRUCTIVE,
-    async ({ accountNumber, orderJson }) => {
+    async ({ accountNumber, ...orderFields }) => {
       try {
-        const order = JSON.parse(orderJson);
+        const order = orderFields;
         const result = await getClient().orderService.createOrder(accountNumber, order);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
@@ -154,12 +212,16 @@ export function registerOrderTools(server: McpServer) {
     {
       accountNumber: z.string().describe("The account number"),
       orderId: z.number().describe("The order ID to replace"),
-      replacementOrderJson: z.string().describe("JSON string of the replacement order"),
+      "time-in-force": ReplacementOrderSchema.shape["time-in-force"],
+      "order-type": ReplacementOrderSchema.shape["order-type"],
+      price: ReplacementOrderSchema.shape.price,
+      "price-effect": ReplacementOrderSchema.shape["price-effect"],
+      legs: ReplacementOrderSchema.shape.legs,
     },
     DESTRUCTIVE,
-    async ({ accountNumber, orderId, replacementOrderJson }) => {
+    async ({ accountNumber, orderId, ...replacementFields }) => {
       try {
-        const replacementOrder = JSON.parse(replacementOrderJson);
+        const replacementOrder = replacementFields;
         const result = await getClient().orderService.replaceOrder(accountNumber, orderId, replacementOrder);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
@@ -174,12 +236,13 @@ export function registerOrderTools(server: McpServer) {
     {
       accountNumber: z.string().describe("The account number"),
       orderId: z.number().describe("The order ID to edit"),
-      editJson: z.string().describe("JSON string with the fields to edit (e.g., price)"),
+      price: OrderEditSchema.shape.price,
+      "price-effect": OrderEditSchema.shape["price-effect"],
     },
     DESTRUCTIVE,
-    async ({ accountNumber, orderId, editJson }) => {
+    async ({ accountNumber, orderId, ...editFields }) => {
       try {
-        const edit = JSON.parse(editJson);
+        const edit = editFields;
         const result = await getClient().orderService.editOrder(accountNumber, orderId, edit);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
@@ -193,12 +256,17 @@ export function registerOrderTools(server: McpServer) {
     "Create a complex (multi-leg) order such as spreads, straddles, etc.",
     {
       accountNumber: z.string().describe("The account number"),
-      orderJson: z.string().describe("JSON string of the complex order object"),
+      "time-in-force": ComplexOrderSchema.shape["time-in-force"],
+      "order-type": ComplexOrderSchema.shape["order-type"],
+      price: ComplexOrderSchema.shape.price,
+      "price-effect": ComplexOrderSchema.shape["price-effect"],
+      legs: ComplexOrderSchema.shape.legs,
+      source: ComplexOrderSchema.shape["source"],
     },
     DESTRUCTIVE,
-    async ({ accountNumber, orderJson }) => {
+    async ({ accountNumber, ...orderFields }) => {
       try {
-        const order = JSON.parse(orderJson);
+        const order = orderFields;
         const result = await getClient().orderService.createComplexOrder(accountNumber, order);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
