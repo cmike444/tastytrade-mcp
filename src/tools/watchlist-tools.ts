@@ -7,48 +7,47 @@ const DESTRUCTIVE = { readOnlyHint: false, destructiveHint: true, idempotentHint
 
 export function registerWatchlistTools(server: McpServer) {
   server.tool(
-    "get_all_watchlists",
-    "Get all user watchlists.",
-    {},
-    READ_ONLY,
-    async () => {
-      try {
-        const watchlists = await getClient().watchlistsService.getAllWatchlists();
-        return { content: [{ type: "text" as const, text: JSON.stringify(watchlists) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_watchlist",
-    "Get a specific watchlist by name.",
+    "manage_watchlist",
+    [
+      "Manage user account watchlists. Actions:",
+      "  list — Get all user watchlists (no extra params needed).",
+      "  get — Get a specific watchlist by name (requires watchlistName).",
+      "  create — Create a new watchlist (requires watchlistJson with name and watchlist-entries).",
+      "  replace — Replace all properties of an existing watchlist (requires watchlistName and watchlistJson).",
+      "  delete — Delete a watchlist (requires watchlistName).",
+    ].join("\n"),
     {
-      watchlistName: z.string().describe("The name of the watchlist"),
+      action: z.enum(["list", "get", "create", "replace", "delete"]).describe(
+        "Action to perform: 'list' all watchlists, 'get' one by name, 'create' a new one, 'replace' an existing one, or 'delete' one."
+      ),
+      watchlistName: z.string().optional().describe("Watchlist name — required for get, replace, and delete actions."),
+      watchlistJson: z.string().optional().describe(
+        "JSON string of watchlist object — required for create (include name and watchlist-entries) and replace actions."
+      ),
     },
     READ_ONLY,
-    async ({ watchlistName }) => {
+    async ({ action, watchlistName, watchlistJson }) => {
       try {
-        const watchlist = await getClient().watchlistsService.getSingleWatchlist(watchlistName);
-        return { content: [{ type: "text" as const, text: JSON.stringify(watchlist) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
+        const svc = getClient().watchlistsService;
+        let result: any;
 
-  server.tool(
-    "create_watchlist",
-    "Create a new account watchlist.",
-    {
-      watchlistJson: z.string().describe("JSON string of the watchlist object with name and watchlist-entries"),
-    },
-    DESTRUCTIVE,
-    async ({ watchlistJson }) => {
-      try {
-        const watchlist = JSON.parse(watchlistJson);
-        const result = await getClient().watchlistsService.createAccountWatchlist(watchlist);
+        if (action === "list") {
+          result = await svc.getAllWatchlists();
+        } else if (action === "get") {
+          if (!watchlistName) throw new Error("watchlistName is required for action 'get'");
+          result = await svc.getSingleWatchlist(watchlistName);
+        } else if (action === "create") {
+          if (!watchlistJson) throw new Error("watchlistJson is required for action 'create'");
+          result = await svc.createAccountWatchlist(JSON.parse(watchlistJson));
+        } else if (action === "replace") {
+          if (!watchlistName) throw new Error("watchlistName is required for action 'replace'");
+          if (!watchlistJson) throw new Error("watchlistJson is required for action 'replace'");
+          result = await svc.replaceWatchlist(watchlistName, JSON.parse(watchlistJson));
+        } else if (action === "delete") {
+          if (!watchlistName) throw new Error("watchlistName is required for action 'delete'");
+          result = await svc.deleteWatchlist(watchlistName);
+        }
+
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
@@ -57,101 +56,40 @@ export function registerWatchlistTools(server: McpServer) {
   );
 
   server.tool(
-    "replace_watchlist",
-    "Replace all properties of an existing watchlist.",
+    "manage_public_watchlist",
+    [
+      "Access TastyTrade public and pairs watchlists. Actions:",
+      "  list_public — Get all TastyTrade public watchlists (optional countsOnly param).",
+      "  get_public — Get a specific public watchlist by name (requires watchlistName).",
+      "  list_pairs — Get all TastyTrade pairs watchlists (no extra params needed).",
+      "  get_pairs — Get a specific pairs watchlist by name (requires watchlistName).",
+    ].join("\n"),
     {
-      watchlistName: z.string().describe("The name of the watchlist to replace"),
-      watchlistJson: z.string().describe("JSON string of the replacement watchlist object"),
+      action: z.enum(["list_public", "get_public", "list_pairs", "get_pairs"]).describe(
+        "Action: 'list_public' all public watchlists, 'get_public' one by name, 'list_pairs' all pairs watchlists, 'get_pairs' one by name."
+      ),
+      watchlistName: z.string().optional().describe("Watchlist name — required for get_public and get_pairs actions."),
+      countsOnly: z.boolean().default(false).describe("For list_public only — return only counts instead of full data."),
     },
-    DESTRUCTIVE,
-    async ({ watchlistName, watchlistJson }) => {
+    READ_ONLY,
+    async ({ action, watchlistName, countsOnly }) => {
       try {
-        const watchlist = JSON.parse(watchlistJson);
-        const result = await getClient().watchlistsService.replaceWatchlist(watchlistName, watchlist);
+        const svc = getClient().watchlistsService;
+        let result: any;
+
+        if (action === "list_public") {
+          result = await svc.getPublicWatchlists(countsOnly);
+        } else if (action === "get_public") {
+          if (!watchlistName) throw new Error("watchlistName is required for action 'get_public'");
+          result = await svc.getPublicWatchlist(watchlistName);
+        } else if (action === "list_pairs") {
+          result = await svc.getPairsWatchlists();
+        } else if (action === "get_pairs") {
+          if (!watchlistName) throw new Error("watchlistName is required for action 'get_pairs'");
+          result = await svc.getPairsWatchlist(watchlistName);
+        }
+
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "delete_watchlist",
-    "Delete a watchlist by name.",
-    {
-      watchlistName: z.string().describe("The name of the watchlist to delete"),
-    },
-    DESTRUCTIVE,
-    async ({ watchlistName }) => {
-      try {
-        const result = await getClient().watchlistsService.deleteWatchlist(watchlistName);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_public_watchlists",
-    "Get all TastyTrade public watchlists.",
-    {
-      countsOnly: z.boolean().default(false).describe("Only return counts instead of full watchlist data"),
-    },
-    READ_ONLY,
-    async ({ countsOnly }) => {
-      try {
-        const watchlists = await getClient().watchlistsService.getPublicWatchlists(countsOnly);
-        return { content: [{ type: "text" as const, text: JSON.stringify(watchlists) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_public_watchlist",
-    "Get a specific TastyTrade public watchlist by name.",
-    {
-      watchlistName: z.string().describe("The name of the public watchlist"),
-    },
-    READ_ONLY,
-    async ({ watchlistName }) => {
-      try {
-        const watchlist = await getClient().watchlistsService.getPublicWatchlist(watchlistName);
-        return { content: [{ type: "text" as const, text: JSON.stringify(watchlist) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_pairs_watchlists",
-    "Get all TastyTrade pairs watchlists.",
-    {},
-    READ_ONLY,
-    async () => {
-      try {
-        const watchlists = await getClient().watchlistsService.getPairsWatchlists();
-        return { content: [{ type: "text" as const, text: JSON.stringify(watchlists) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_pairs_watchlist",
-    "Get a specific TastyTrade pairs watchlist by name.",
-    {
-      pairsWatchlistName: z.string().describe("The name of the pairs watchlist"),
-    },
-    READ_ONLY,
-    async ({ pairsWatchlistName }) => {
-      try {
-        const watchlist = await getClient().watchlistsService.getPairsWatchlist(pairsWatchlistName);
-        return { content: [{ type: "text" as const, text: JSON.stringify(watchlist) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }

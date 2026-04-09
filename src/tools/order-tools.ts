@@ -7,76 +7,64 @@ const DESTRUCTIVE = { readOnlyHint: false, destructiveHint: true, idempotentHint
 
 export function registerOrderTools(server: McpServer) {
   server.tool(
-    "get_live_orders",
-    "Get all currently live (active) orders for an account.",
+    "query_orders",
+    [
+      "Retrieve orders for an account or customer. Scope and filter via parameters:",
+      "  scope='account_live' — Live (active) orders for a specific account (requires accountNumber).",
+      "  scope='account_history' — Paginated order history for an account (requires accountNumber; optional status, perPage, pageOffset).",
+      "  scope='account_single' — Single order by ID (requires accountNumber and orderId).",
+      "  scope='customer_live' — Live orders across all accounts for a customer (requires customerId).",
+      "  scope='customer_history' — Paginated order history for a customer (requires customerId; optional perPage, pageOffset).",
+      "Status filter examples: 'Filled', 'Cancelled', 'Live', 'Received', 'Rejected'.",
+    ].join("\n"),
     {
-      accountNumber: z.string().describe("The account number to get live orders for"),
+      scope: z.enum([
+        "account_live",
+        "account_history",
+        "account_single",
+        "customer_live",
+        "customer_history",
+      ]).describe(
+        "Query scope: 'account_live' (live orders for account), 'account_history' (all orders for account), 'account_single' (one order by ID), 'customer_live' (live across all accounts), 'customer_history' (all orders for customer)."
+      ),
+      accountNumber: z.string().optional().describe("Account number — required for account_live, account_history, account_single scopes."),
+      orderId: z.number().optional().describe("Order ID — required for account_single scope."),
+      customerId: z.string().optional().describe("Customer ID — required for customer_live and customer_history scopes."),
+      status: z.string().optional().describe("Filter by order status (e.g. 'Filled', 'Cancelled', 'Live') — applies to account_history scope."),
+      perPage: z.number().optional().describe("Number of orders per page — applies to account_history and customer_history scopes."),
+      pageOffset: z.number().optional().describe("Page offset for pagination — applies to account_history and customer_history scopes."),
     },
     READ_ONLY,
-    async ({ accountNumber }) => {
+    async ({ scope, accountNumber, orderId, customerId, status, perPage, pageOffset }) => {
       try {
-        const orders = await getClient().orderService.getLiveOrders(accountNumber);
-        return { content: [{ type: "text" as const, text: JSON.stringify(orders) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
+        const svc = getClient().orderService;
+        let result: any;
 
-  server.tool(
-    "get_orders",
-    "Get a paginated list of orders for an account. Returns orders sorted by date descending.",
-    {
-      accountNumber: z.string().describe("The account number to get orders for"),
-      perPage: z.number().optional().describe("Number of orders per page"),
-      pageOffset: z.number().optional().describe("Page offset for pagination"),
-      status: z.string().optional().describe("Filter by order status (e.g., 'Filled', 'Cancelled', 'Live')"),
-    },
-    READ_ONLY,
-    async ({ accountNumber, perPage, pageOffset, status }) => {
-      try {
-        const queryParams: Record<string, any> = {};
-        if (perPage) queryParams["per-page"] = perPage;
-        if (pageOffset) queryParams["page-offset"] = pageOffset;
-        if (status) queryParams.status = status;
-        const orders = await getClient().orderService.getOrders(accountNumber, queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(orders) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
+        if (scope === "account_live") {
+          if (!accountNumber) throw new Error("accountNumber is required for scope 'account_live'");
+          result = await svc.getLiveOrders(accountNumber);
+        } else if (scope === "account_history") {
+          if (!accountNumber) throw new Error("accountNumber is required for scope 'account_history'");
+          const params: Record<string, any> = {};
+          if (perPage) params["per-page"] = perPage;
+          if (pageOffset) params["page-offset"] = pageOffset;
+          if (status) params.status = status;
+          result = await svc.getOrders(accountNumber, params);
+        } else if (scope === "account_single") {
+          if (!accountNumber) throw new Error("accountNumber is required for scope 'account_single'");
+          if (orderId === undefined) throw new Error("orderId is required for scope 'account_single'");
+          result = await svc.getOrder(accountNumber, orderId);
+        } else if (scope === "customer_live") {
+          if (!customerId) throw new Error("customerId is required for scope 'customer_live'");
+          result = await svc.getLiveOrdersForCustomer(customerId);
+        } else if (scope === "customer_history") {
+          if (!customerId) throw new Error("customerId is required for scope 'customer_history'");
+          const params: Record<string, any> = {};
+          if (perPage) params["per-page"] = perPage;
+          if (pageOffset) params["page-offset"] = pageOffset;
+          result = await svc.getCustomerOrders(customerId, params);
+        }
 
-  server.tool(
-    "get_order",
-    "Get details of a specific order by its ID.",
-    {
-      accountNumber: z.string().describe("The account number"),
-      orderId: z.number().describe("The order ID to retrieve"),
-    },
-    READ_ONLY,
-    async ({ accountNumber, orderId }) => {
-      try {
-        const order = await getClient().orderService.getOrder(accountNumber, orderId);
-        return { content: [{ type: "text" as const, text: JSON.stringify(order) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "create_order",
-    "Create and submit a new order. Use order_dry_run first to validate.",
-    {
-      accountNumber: z.string().describe("The account number to place the order in"),
-      orderJson: z.string().describe("JSON string of the order object with fields like time-in-force, order-type, legs, price, etc."),
-    },
-    DESTRUCTIVE,
-    async ({ accountNumber, orderJson }) => {
-      try {
-        const order = JSON.parse(orderJson);
-        const result = await getClient().orderService.createOrder(accountNumber, order);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
@@ -96,6 +84,45 @@ export function registerOrderTools(server: McpServer) {
       try {
         const order = JSON.parse(orderJson);
         const result = await getClient().orderService.postOrderDryRun(accountNumber, order);
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "replacement_order_dry_run",
+    "Run preflight checks for a replacement order without executing it.",
+    {
+      accountNumber: z.string().describe("The account number"),
+      orderId: z.number().describe("The order ID to check replacement for"),
+      replacementOrderJson: z.string().describe("JSON string of the replacement order"),
+    },
+    READ_ONLY,
+    async ({ accountNumber, orderId, replacementOrderJson }) => {
+      try {
+        const replacementOrder = JSON.parse(replacementOrderJson);
+        const result = await getClient().orderService.replacementOrderDryRun(accountNumber, orderId, replacementOrder);
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "create_order",
+    "Create and submit a new order. Use order_dry_run first to validate.",
+    {
+      accountNumber: z.string().describe("The account number to place the order in"),
+      orderJson: z.string().describe("JSON string of the order object with fields like time-in-force, order-type, legs, price, etc."),
+    },
+    DESTRUCTIVE,
+    async ({ accountNumber, orderJson }) => {
+      try {
+        const order = JSON.parse(orderJson);
+        const result = await getClient().orderService.createOrder(accountNumber, order);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
@@ -210,65 +237,6 @@ export function registerOrderTools(server: McpServer) {
       try {
         const result = await getClient().orderService.postReconfirmOrder(accountNumber, orderId);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "replacement_order_dry_run",
-    "Run preflight checks for a replacement order without executing it.",
-    {
-      accountNumber: z.string().describe("The account number"),
-      orderId: z.number().describe("The order ID to check replacement for"),
-      replacementOrderJson: z.string().describe("JSON string of the replacement order"),
-    },
-    READ_ONLY,
-    async ({ accountNumber, orderId, replacementOrderJson }) => {
-      try {
-        const replacementOrder = JSON.parse(replacementOrderJson);
-        const result = await getClient().orderService.replacementOrderDryRun(accountNumber, orderId, replacementOrder);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_customer_live_orders",
-    "Get all live orders across all accounts for a customer.",
-    {
-      customerId: z.string().describe("The customer ID"),
-    },
-    READ_ONLY,
-    async ({ customerId }) => {
-      try {
-        const orders = await getClient().orderService.getLiveOrdersForCustomer(customerId);
-        return { content: [{ type: "text" as const, text: JSON.stringify(orders) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_customer_orders",
-    "Get a paginated list of orders across all accounts for a customer.",
-    {
-      customerId: z.string().describe("The customer ID"),
-      perPage: z.number().optional().describe("Number of orders per page"),
-      pageOffset: z.number().optional().describe("Page offset for pagination"),
-    },
-    READ_ONLY,
-    async ({ customerId, perPage, pageOffset }) => {
-      try {
-        const queryParams: Record<string, any> = {};
-        if (perPage) queryParams["per-page"] = perPage;
-        if (pageOffset) queryParams["page-offset"] = pageOffset;
-        const orders = await getClient().orderService.getCustomerOrders(customerId, queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(orders) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }

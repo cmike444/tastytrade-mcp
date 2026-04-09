@@ -6,63 +6,39 @@ const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: 
 
 export function registerAccountTools(server: McpServer) {
   server.tool(
-    "get_customer_accounts",
-    "Get a list of all customer accounts associated with the authenticated user.",
-    {},
-    READ_ONLY,
-    async () => {
-      try {
-        const accounts = await getClient().accountsAndCustomersService.getCustomerAccounts();
-        return { content: [{ type: "text" as const, text: JSON.stringify(accounts) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_customer_resource",
-    "Get the full customer resource (profile information) for the authenticated user.",
-    {},
-    READ_ONLY,
-    async () => {
-      try {
-        const customer = await getClient().accountsAndCustomersService.getCustomerResource();
-        return { content: [{ type: "text" as const, text: JSON.stringify(customer) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_full_account_resource",
-    "Get full details for a specific customer account.",
+    "get_account_info",
+    [
+      "Retrieve account and customer information. Detail levels:",
+      "  customer_accounts — List all accounts for the authenticated user (no accountNumber needed).",
+      "  customer_resource — Full customer profile for the authenticated user (no accountNumber needed).",
+      "  full_account — Full details for a specific account (requires accountNumber).",
+      "  account_status — Trading status and permissions for a specific account (requires accountNumber).",
+    ].join("\n"),
     {
-      accountNumber: z.string().describe("The account number to retrieve details for"),
+      detail: z.enum(["customer_accounts", "customer_resource", "full_account", "account_status"]).describe(
+        "Level of account detail: 'customer_accounts' (list all accounts), 'customer_resource' (customer profile), 'full_account' (full account details), 'account_status' (trading status and permissions)."
+      ),
+      accountNumber: z.string().optional().describe("Account number — required for 'full_account' and 'account_status' detail levels."),
     },
     READ_ONLY,
-    async ({ accountNumber }) => {
+    async ({ detail, accountNumber }) => {
       try {
-        const account = await getClient().accountsAndCustomersService.getFullCustomerAccountResource(accountNumber);
-        return { content: [{ type: "text" as const, text: JSON.stringify(account) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
+        const svc = getClient().accountsAndCustomersService;
+        let result: any;
 
-  server.tool(
-    "get_account_status",
-    "Get the trading status and permissions for a specific account.",
-    {
-      accountNumber: z.string().describe("The account number to check status for"),
-    },
-    READ_ONLY,
-    async ({ accountNumber }) => {
-      try {
-        const status = await getClient().accountStatusService.getAccountStatus(accountNumber);
-        return { content: [{ type: "text" as const, text: JSON.stringify(status) }] };
+        if (detail === "customer_accounts") {
+          result = await svc.getCustomerAccounts();
+        } else if (detail === "customer_resource") {
+          result = await svc.getCustomerResource();
+        } else if (detail === "full_account") {
+          if (!accountNumber) throw new Error("accountNumber is required for detail 'full_account'");
+          result = await svc.getFullCustomerAccountResource(accountNumber);
+        } else if (detail === "account_status") {
+          if (!accountNumber) throw new Error("accountNumber is required for detail 'account_status'");
+          result = await getClient().accountStatusService.getAccountStatus(accountNumber);
+        }
+
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }

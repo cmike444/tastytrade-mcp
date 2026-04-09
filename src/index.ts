@@ -251,7 +251,7 @@ async function startHttpServer() {
   });
 
   app.get("/health", (_req, res) => {
-    res.json({ status: "ok", transport: "streamable-http", tools: 73, oauth: true });
+    res.json({ status: "ok", transport: "streamable-http", tools: 35, oauth: true });
   });
 
   app.post("/mcp", async (req, res) => {

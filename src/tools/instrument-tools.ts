@@ -6,404 +6,163 @@ const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: 
 
 export function registerInstrumentTools(server: McpServer) {
   server.tool(
-    "get_equity",
-    "Get equity instrument definition for a single symbol.",
+    "get_instrument",
+    [
+      "Look up instrument definitions by type. Supported types:",
+      "  equity — Single equity by symbol (requires symbol).",
+      "  equity_definitions — Equity definitions for one or more symbols (optional symbols array, optional lendability filter).",
+      "  active_equities — All active equities, paginated (optional perPage, pageOffset).",
+      "  equity_option — Single equity option by OCC symbol (requires symbol).",
+      "  equity_options — Equity options for given symbols (requires symbols array; optional active, withExpired).",
+      "  option_chain — Full option chain for an underlying (requires symbol).",
+      "  nested_option_chain — Option chain grouped by expiration then strike (requires symbol).",
+      "  compact_option_chain — Compact option chain to minimize response size (requires symbol).",
+      "  future — Single futures contract by symbol e.g. '/ESZ4' (requires symbol).",
+      "  futures — Multiple futures by symbols or product code (optional symbols array, optional productCode).",
+      "  futures_products — Metadata for all supported futures products (no extra params).",
+      "  future_product — Single futures product by exchange and code (requires exchange, code).",
+      "  future_option — Single future option by TW symbol (requires symbol).",
+      "  future_options — Multiple future options by TW symbols (optional symbols array).",
+      "  future_option_chain — Futures option chain for a product code (requires symbol as product code).",
+      "  nested_future_option_chain — Futures option chain in nested format (requires symbol as product code).",
+      "  future_option_products — Metadata for all supported future option products (no extra params).",
+      "  future_option_product — Single future option product by exchange and root symbol (requires exchange, rootSymbol).",
+      "  cryptocurrency — Single cryptocurrency by symbol e.g. 'BTC/USD' (requires symbol).",
+      "  cryptocurrencies — Multiple cryptocurrencies (optional symbols array).",
+      "  warrant — Single warrant by symbol (requires symbol).",
+      "  warrants — Multiple warrants (optional symbols array).",
+      "  quantity_decimal_precisions — All quantity decimal precisions (no extra params).",
+    ].join("\n"),
     {
-      symbol: z.string().describe("The equity symbol (e.g., 'AAPL', 'TSLA')"),
+      type: z.enum([
+        "equity",
+        "equity_definitions",
+        "active_equities",
+        "equity_option",
+        "equity_options",
+        "option_chain",
+        "nested_option_chain",
+        "compact_option_chain",
+        "future",
+        "futures",
+        "futures_products",
+        "future_product",
+        "future_option",
+        "future_options",
+        "future_option_chain",
+        "nested_future_option_chain",
+        "future_option_products",
+        "future_option_product",
+        "cryptocurrency",
+        "cryptocurrencies",
+        "warrant",
+        "warrants",
+        "quantity_decimal_precisions",
+      ]).describe(
+        "The instrument type/operation to look up. See tool description for required parameters per type."
+      ),
+      symbol: z.string().optional().describe(
+        "Symbol for the instrument. Required for: equity, equity_option, option_chain, nested_option_chain, compact_option_chain, future, future_option, future_option_chain, nested_future_option_chain, cryptocurrency, warrant."
+      ),
+      symbols: z.array(z.string()).optional().describe(
+        "Array of symbols — used for equity_definitions, equity_options, futures, future_options, cryptocurrencies, warrants."
+      ),
+      lendability: z.string().optional().describe(
+        "Lendability filter for equity_definitions: 'Easy To Borrow', 'Locate Required', or 'Preborrow'."
+      ),
+      active: z.boolean().default(true).describe("For equity_options: only return active options (default true)."),
+      withExpired: z.boolean().default(false).describe("For equity_options: include expired options (default false)."),
+      productCode: z.string().optional().describe("Futures product code filter for type 'futures' (e.g. 'ES')."),
+      exchange: z.string().optional().describe("Exchange for future_product or future_option_product (e.g. 'CME')."),
+      code: z.string().optional().describe("Product code for future_product (e.g. 'ES')."),
+      rootSymbol: z.string().optional().describe("Root symbol for future_option_product (e.g. 'ES')."),
+      perPage: z.number().optional().describe("Results per page — used for active_equities."),
+      pageOffset: z.number().optional().describe("Page offset for pagination — used for active_equities."),
     },
     READ_ONLY,
-    async ({ symbol }) => {
+    async ({ type, symbol, symbols, lendability, active, withExpired, productCode, exchange, code, rootSymbol, perPage, pageOffset }) => {
       try {
-        const equity = await getClient().instrumentsService.getSingleEquity(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(equity) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
+        const svc = getClient().instrumentsService;
+        let result: any;
 
-  server.tool(
-    "get_equity_definitions",
-    "Get equity definitions for one or more symbols.",
-    {
-      symbols: z.array(z.string()).optional().describe("Array of equity symbols to look up"),
-      lendability: z.string().optional().describe("Filter by lendability ('Easy To Borrow', 'Locate Required', 'Preborrow')"),
-    },
-    READ_ONLY,
-    async ({ symbols, lendability }) => {
-      try {
-        const queryParams: Record<string, any> = {};
-        if (symbols) queryParams.symbol = symbols;
-        if (lendability) queryParams.lendability = lendability;
-        const equities = await getClient().instrumentsService.getEquityDefinitions(queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(equities) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
+        if (type === "equity") {
+          if (!symbol) throw new Error("symbol is required for type 'equity'");
+          result = await svc.getSingleEquity(symbol);
+        } else if (type === "equity_definitions") {
+          const params: Record<string, any> = {};
+          if (symbols) params.symbol = symbols;
+          if (lendability) params.lendability = lendability;
+          result = await svc.getEquityDefinitions(params);
+        } else if (type === "active_equities") {
+          const params: Record<string, any> = {};
+          if (perPage) params["per-page"] = perPage;
+          if (pageOffset) params["page-offset"] = pageOffset;
+          result = await svc.getActiveEquities(params);
+        } else if (type === "equity_option") {
+          if (!symbol) throw new Error("symbol is required for type 'equity_option'");
+          result = await svc.getSingleEquityOption(symbol);
+        } else if (type === "equity_options") {
+          if (!symbols || symbols.length === 0) throw new Error("symbols array is required for type 'equity_options'");
+          result = await svc.getEquityOptions(symbols, active, withExpired);
+        } else if (type === "option_chain") {
+          if (!symbol) throw new Error("symbol is required for type 'option_chain'");
+          result = await svc.getOptionChain(symbol);
+        } else if (type === "nested_option_chain") {
+          if (!symbol) throw new Error("symbol is required for type 'nested_option_chain'");
+          result = await svc.getNestedOptionChain(symbol);
+        } else if (type === "compact_option_chain") {
+          if (!symbol) throw new Error("symbol is required for type 'compact_option_chain'");
+          result = await svc.getCompactOptionChain(symbol);
+        } else if (type === "future") {
+          if (!symbol) throw new Error("symbol is required for type 'future'");
+          result = await svc.getSingleFuture(symbol);
+        } else if (type === "futures") {
+          const params: Record<string, any> = {};
+          if (symbols) params.symbol = symbols;
+          if (productCode) params["product-code"] = productCode;
+          result = await svc.getFutures(params);
+        } else if (type === "futures_products") {
+          result = await svc.getFuturesProducts();
+        } else if (type === "future_product") {
+          if (!exchange) throw new Error("exchange is required for type 'future_product'");
+          if (!code) throw new Error("code is required for type 'future_product'");
+          result = await svc.getSingleFutureProduct(exchange, code);
+        } else if (type === "future_option") {
+          if (!symbol) throw new Error("symbol is required for type 'future_option'");
+          result = await svc.getSingleFutureOption(symbol);
+        } else if (type === "future_options") {
+          const params: Record<string, any> = {};
+          if (symbols) params.symbol = symbols;
+          result = await svc.getFutureOptions(params);
+        } else if (type === "future_option_chain") {
+          if (!symbol) throw new Error("symbol (product code) is required for type 'future_option_chain'");
+          result = await svc.getFutureOptionChain(symbol);
+        } else if (type === "nested_future_option_chain") {
+          if (!symbol) throw new Error("symbol (product code) is required for type 'nested_future_option_chain'");
+          result = await svc.getNestedFutureOptionChains(symbol);
+        } else if (type === "future_option_products") {
+          result = await svc.getFutureOptionsProducts();
+        } else if (type === "future_option_product") {
+          if (!exchange) throw new Error("exchange is required for type 'future_option_product'");
+          if (!rootSymbol) throw new Error("rootSymbol is required for type 'future_option_product'");
+          result = await svc.getSingleFutureOptionProduct(exchange, rootSymbol);
+        } else if (type === "cryptocurrency") {
+          if (!symbol) throw new Error("symbol is required for type 'cryptocurrency'");
+          result = await svc.getSingleCryptocurrency(symbol);
+        } else if (type === "cryptocurrencies") {
+          result = await svc.getCryptocurrencies(symbols || []);
+        } else if (type === "warrant") {
+          if (!symbol) throw new Error("symbol is required for type 'warrant'");
+          result = await svc.getSingleWarrant(symbol);
+        } else if (type === "warrants") {
+          const params: Record<string, any> = {};
+          if (symbols) params.symbol = symbols;
+          result = await svc.getWarrants(params);
+        } else if (type === "quantity_decimal_precisions") {
+          result = await svc.getQuantityDecimalPrecisions();
+        }
 
-  server.tool(
-    "get_active_equities",
-    "Get all active equities in a paginated fashion.",
-    {
-      perPage: z.number().optional().describe("Number of results per page"),
-      pageOffset: z.number().optional().describe("Page offset for pagination"),
-    },
-    READ_ONLY,
-    async ({ perPage, pageOffset }) => {
-      try {
-        const queryParams: Record<string, any> = {};
-        if (perPage) queryParams["per-page"] = perPage;
-        if (pageOffset) queryParams["page-offset"] = pageOffset;
-        const equities = await getClient().instrumentsService.getActiveEquities(queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(equities) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_equity_options",
-    "Get equity option instruments for given symbols.",
-    {
-      symbols: z.array(z.string()).describe("Array of option symbols to look up"),
-      active: z.boolean().default(true).describe("Only return active options"),
-      withExpired: z.boolean().default(false).describe("Include expired options"),
-    },
-    READ_ONLY,
-    async ({ symbols, active, withExpired }) => {
-      try {
-        const options = await getClient().instrumentsService.getEquityOptions(symbols, active, withExpired);
-        return { content: [{ type: "text" as const, text: JSON.stringify(options) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_single_equity_option",
-    "Get a single equity option instrument by its symbol.",
-    {
-      symbol: z.string().describe("The option symbol (OCC format)"),
-    },
-    READ_ONLY,
-    async ({ symbol }) => {
-      try {
-        const option = await getClient().instrumentsService.getSingleEquityOption(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(option) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_option_chain",
-    "Get the full option chain for an underlying symbol with all expirations and strikes.",
-    {
-      symbol: z.string().describe("The underlying symbol (e.g., 'AAPL')"),
-    },
-    READ_ONLY,
-    async ({ symbol }) => {
-      try {
-        const chain = await getClient().instrumentsService.getOptionChain(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(chain) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_nested_option_chain",
-    "Get the option chain in a nested format (grouped by expiration then strike) to reduce processing.",
-    {
-      symbol: z.string().describe("The underlying symbol (e.g., 'AAPL')"),
-    },
-    READ_ONLY,
-    async ({ symbol }) => {
-      try {
-        const chain = await getClient().instrumentsService.getNestedOptionChain(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(chain) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_compact_option_chain",
-    "Get the option chain in a compact format to minimize response size.",
-    {
-      symbol: z.string().describe("The underlying symbol (e.g., 'AAPL')"),
-    },
-    READ_ONLY,
-    async ({ symbol }) => {
-      try {
-        const chain = await getClient().instrumentsService.getCompactOptionChain(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(chain) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_futures",
-    "Get futures instrument definitions.",
-    {
-      symbols: z.array(z.string()).optional().describe("Array of futures symbols to look up"),
-      productCode: z.string().optional().describe("Product code to filter by (e.g., 'ES')"),
-    },
-    READ_ONLY,
-    async ({ symbols, productCode }) => {
-      try {
-        const queryParams: Record<string, any> = {};
-        if (symbols) queryParams.symbol = symbols;
-        if (productCode) queryParams["product-code"] = productCode;
-        const futures = await getClient().instrumentsService.getFutures(queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(futures) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_single_future",
-    "Get a single futures instrument definition by symbol.",
-    {
-      symbol: z.string().describe("The futures symbol (e.g., '/ESZ4')"),
-    },
-    READ_ONLY,
-    async ({ symbol }) => {
-      try {
-        const future = await getClient().instrumentsService.getSingleFuture(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(future) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_future_option_chain",
-    "Get the futures option chain for a product code.",
-    {
-      symbol: z.string().describe("The futures product code (e.g., 'ES')"),
-    },
-    READ_ONLY,
-    async ({ symbol }) => {
-      try {
-        const chain = await getClient().instrumentsService.getFutureOptionChain(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(chain) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_nested_future_option_chain",
-    "Get futures option chain in nested format for a product code. Use call-streamer-symbol/put-streamer-symbol for market data subscriptions.",
-    {
-      symbol: z.string().describe("The futures product code (e.g., 'ES')"),
-    },
-    READ_ONLY,
-    async ({ symbol }) => {
-      try {
-        const chain = await getClient().instrumentsService.getNestedFutureOptionChains(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(chain) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_future_options",
-    "Get future option instruments. Uses TW symbology.",
-    {
-      symbols: z.array(z.string()).optional().describe("Array of future option symbols in TW format"),
-    },
-    READ_ONLY,
-    async ({ symbols }) => {
-      try {
-        const queryParams: Record<string, any> = {};
-        if (symbols) queryParams.symbol = symbols;
-        const options = await getClient().instrumentsService.getFutureOptions(queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(options) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_single_future_option",
-    "Get a single future option by symbol (TW symbology).",
-    {
-      symbol: z.string().describe("The future option symbol in TW format"),
-    },
-    READ_ONLY,
-    async ({ symbol }) => {
-      try {
-        const option = await getClient().instrumentsService.getSingleFutureOption(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(option) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_futures_products",
-    "Get metadata for all supported futures products.",
-    {},
-    READ_ONLY,
-    async () => {
-      try {
-        const products = await getClient().instrumentsService.getFuturesProducts();
-        return { content: [{ type: "text" as const, text: JSON.stringify(products) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_single_future_product",
-    "Get a single futures product by exchange and code.",
-    {
-      exchange: z.string().describe("The exchange (e.g., 'CME')"),
-      code: z.string().describe("The product code (e.g., 'ES')"),
-    },
-    READ_ONLY,
-    async ({ exchange, code }) => {
-      try {
-        const product = await getClient().instrumentsService.getSingleFutureProduct(exchange, code);
-        return { content: [{ type: "text" as const, text: JSON.stringify(product) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_future_option_products",
-    "Get metadata for all supported future option products.",
-    {},
-    READ_ONLY,
-    async () => {
-      try {
-        const products = await getClient().instrumentsService.getFutureOptionsProducts();
-        return { content: [{ type: "text" as const, text: JSON.stringify(products) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_single_future_option_product",
-    "Get a future option product by exchange and root symbol.",
-    {
-      exchange: z.string().describe("The exchange (e.g., 'CME')"),
-      rootSymbol: z.string().describe("The root symbol (e.g., 'ES')"),
-    },
-    READ_ONLY,
-    async ({ exchange, rootSymbol }) => {
-      try {
-        const product = await getClient().instrumentsService.getSingleFutureOptionProduct(exchange, rootSymbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(product) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_cryptocurrencies",
-    "Get cryptocurrency instrument definitions.",
-    {
-      symbols: z.array(z.string()).optional().describe("Array of cryptocurrency symbols to look up"),
-    },
-    READ_ONLY,
-    async ({ symbols }) => {
-      try {
-        const cryptos = await getClient().instrumentsService.getCryptocurrencies(symbols || []);
-        return { content: [{ type: "text" as const, text: JSON.stringify(cryptos) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_single_cryptocurrency",
-    "Get a single cryptocurrency instrument by symbol.",
-    {
-      symbol: z.string().describe("The cryptocurrency symbol (e.g., 'BTC/USD')"),
-    },
-    READ_ONLY,
-    async ({ symbol }) => {
-      try {
-        const crypto = await getClient().instrumentsService.getSingleCryptocurrency(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(crypto) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_warrants",
-    "Get warrant instrument definitions.",
-    {
-      symbols: z.array(z.string()).optional().describe("Array of warrant symbols to look up"),
-    },
-    READ_ONLY,
-    async ({ symbols }) => {
-      try {
-        const queryParams: Record<string, any> = {};
-        if (symbols) queryParams.symbol = symbols;
-        const warrants = await getClient().instrumentsService.getWarrants(queryParams);
-        return { content: [{ type: "text" as const, text: JSON.stringify(warrants) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_single_warrant",
-    "Get a single warrant instrument by symbol.",
-    {
-      symbol: z.string().describe("The warrant symbol"),
-    },
-    READ_ONLY,
-    async ({ symbol }) => {
-      try {
-        const warrant = await getClient().instrumentsService.getSingleWarrant(symbol);
-        return { content: [{ type: "text" as const, text: JSON.stringify(warrant) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "get_quantity_decimal_precisions",
-    "Get all quantity decimal precisions for instruments.",
-    {},
-    READ_ONLY,
-    async () => {
-      try {
-        const precisions = await getClient().instrumentsService.getQuantityDecimalPrecisions();
-        return { content: [{ type: "text" as const, text: JSON.stringify(precisions) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
