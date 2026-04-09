@@ -86,7 +86,7 @@ export function registerTransactionTools(server: McpServer) {
         if (symbol) queryParams.symbol = symbol;
         const transactions = await getClient().transactionsService.getAccountTransactions(accountNumber, queryParams);
         const result = applyTransactionProjection(transactions, limit, detail);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }

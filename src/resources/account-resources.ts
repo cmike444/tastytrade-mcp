@@ -22,7 +22,7 @@ export function registerAccountResources(server: McpServer) {
             {
               uri: uri.toString(),
               mimeType: "application/json",
-              text: JSON.stringify(balances, null, 2),
+              text: JSON.stringify(balances),
             },
           ],
         };
@@ -60,7 +60,7 @@ export function registerAccountResources(server: McpServer) {
             {
               uri: uri.toString(),
               mimeType: "application/json",
-              text: JSON.stringify(positions, null, 2),
+              text: JSON.stringify(positions),
             },
           ],
         };

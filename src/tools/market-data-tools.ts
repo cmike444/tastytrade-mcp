@@ -168,7 +168,7 @@ export function registerMarketDataTools(server: McpServer) {
         }
 
         const projected = candles.map(c => projectCandle(c, detail));
-        return { content: [{ type: "text" as const, text: JSON.stringify(projected, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(projected) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }

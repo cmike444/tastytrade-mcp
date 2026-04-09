@@ -90,12 +90,12 @@ export function registerDiscoveryTools(server: McpServer) {
         "",
         "**Input Schema**:",
         "```json",
-        JSON.stringify(tool.inputSchema, null, 2),
+        JSON.stringify(tool.inputSchema),
         "```",
       ];
 
       if (tool.annotations && Object.keys(tool.annotations).length > 0) {
-        lines.push("", "**Annotations**:", "```json", JSON.stringify(tool.annotations, null, 2), "```");
+        lines.push("", "**Annotations**:", "```json", JSON.stringify(tool.annotations), "```");
       }
 
       return { content: [{ type: "text" as const, text: lines.join("\n") }] };

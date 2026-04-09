@@ -211,7 +211,7 @@ export function registerInstrumentTools(server: McpServer) {
         if (type === "option_chain") {
           result = applyOptionChainProjection(result, limit, detail);
         }
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }

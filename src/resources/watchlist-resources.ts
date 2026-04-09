@@ -17,7 +17,7 @@ export function registerWatchlistResources(server: McpServer) {
             {
               uri: uri.toString(),
               mimeType: "application/json",
-              text: JSON.stringify(watchlists, null, 2),
+              text: JSON.stringify(watchlists),
             },
           ],
         };
@@ -50,7 +50,7 @@ export function registerWatchlistResources(server: McpServer) {
             {
               uri: uri.toString(),
               mimeType: "application/json",
-              text: JSON.stringify(watchlists, null, 2),
+              text: JSON.stringify(watchlists),
             },
           ],
         };
@@ -88,7 +88,7 @@ export function registerWatchlistResources(server: McpServer) {
             {
               uri: uri.toString(),
               mimeType: "application/json",
-              text: JSON.stringify(watchlist, null, 2),
+              text: JSON.stringify(watchlist),
             },
           ],
         };

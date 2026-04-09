@@ -78,7 +78,7 @@ export function registerBalancePositionTools(server: McpServer) {
         if (underlyingSymbol) queryParams["underlying-symbol"] = underlyingSymbol;
         const positions = await getClient().balancesAndPositionsService.getPositionsList(accountNumber, queryParams);
         const result = applyPositionProjection(positions, detail);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
