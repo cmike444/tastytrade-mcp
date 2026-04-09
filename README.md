@@ -112,6 +112,53 @@ Authorization: Bearer your-secret-token
 | `TASTYTRADE_REFRESH_TOKEN` | Yes | - | TastyTrade OAuth refresh token (auto-loaded on startup) |
 | `TASTYTRADE_SANDBOX` | No | `false` | Set to `true` to use TastyTrade's sandbox/test environment |
 | `PORT` | No | `5000` | HTTP server port (cloud mode only) |
+| `TOOL_DISCOVERY_MODE` | No | `false` | Enable dynamic tool discovery mode (see below) |
+
+---
+
+## Dynamic Tool Discovery Mode
+
+By default, all tools are registered at startup and broadcast to the LLM on every turn (~12,000–15,000 tokens of schema overhead per request). For token-sensitive deployments, you can enable **dynamic tool discovery** mode, which reduces the initial schema overhead to ~200–500 tokens.
+
+### Enabling Discovery Mode
+
+```bash
+TOOL_DISCOVERY_MODE=true node build/index.js
+```
+
+When enabled, only three lightweight meta-tools are exposed at startup:
+
+| Meta-tool | Description |
+|---|---|
+| `list_tool_categories` | Returns the top-level tool categories (Account, Orders, Market Data, Instruments, Watchlists, Risk, Auth) with a count of tools in each |
+| `search_tools` | Keyword search over all tool names and descriptions — returns matching tools with one-sentence summaries |
+| `get_tool_details` | Returns the full input schema and annotations for a specific tool by name |
+
+Full tool schemas are stored in an internal registry but are **not broadcast** to the LLM in the initial context. The model discovers and fetches schemas on demand.
+
+### Example Interaction Flow
+
+```
+User: What's the current price of AAPL?
+
+Model → list_tool_categories()
+← "Market Data (7 tools), Account (9 tools), ..."
+
+Model → search_tools("quote price real-time")
+← "get_quote [Market Data]: Get real-time quote data for one or more symbols using DXLink..."
+
+Model → get_tool_details("get_quote")
+← Full JSON schema with parameters (symbols, timeoutMs)
+
+Model → get_quote(symbols=["AAPL"])
+← { bid: 174.20, ask: 174.22, last: 174.21, ... }
+```
+
+On subsequent turns within the same session, the model can skip the discovery step and call `get_quote` directly if it already knows the schema from earlier in the conversation.
+
+### Backward Compatibility
+
+When `TOOL_DISCOVERY_MODE` is not set (or set to `false`), all tools register at startup exactly as before. Existing integrations are unaffected.
 
 ---
 
@@ -332,11 +379,13 @@ This project is configured for deployment on Replit as an always-on VM:
 
 ```
 src/
-  index.ts                    - Entry point (dual transport + OAuth 2.1 + bearer auth)
+  index.ts                    - Entry point (dual transport + OAuth 2.1 + bearer auth + TOOL_DISCOVERY_MODE)
   tastytrade-client.ts        - TastyTrade client wrapper (auto-authentication on startup)
   oauth-provider.ts           - Built-in OAuth 2.1 authorization server (DCR, PKCE, token management)
   auth-page.ts                - HTML authorization page rendered during OAuth flow
   tools/
+    tool-registry.ts          - Internal registry of all tool definitions (used by discovery mode)
+    discovery-tools.ts        - Meta-tools: list_tool_categories, search_tools, get_tool_details
     auth-tools.ts             - Authentication tools
     account-tools.ts          - Account & customer tools
     balance-position-tools.ts - Balances & positions

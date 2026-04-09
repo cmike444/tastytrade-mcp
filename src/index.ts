@@ -16,6 +16,7 @@ import { registerMarketDataTools } from "./tools/market-data-tools.js";
 import { registerTransactionTools } from "./tools/transaction-tools.js";
 import { registerWatchlistTools } from "./tools/watchlist-tools.js";
 import { registerRiskMarginTools } from "./tools/risk-margin-tools.js";
+import { registerDiscoveryTools } from "./tools/discovery-tools.js";
 import { registerAccountResources } from "./resources/account-resources.js";
 import { registerWatchlistResources } from "./resources/watchlist-resources.js";
 import {
@@ -29,6 +30,8 @@ import {
   validateAccessToken,
 } from "./oauth-provider.js";
 import { renderAuthorizationPage } from "./auth-page.js";
+
+const TOOL_DISCOVERY_MODE = process.env.TOOL_DISCOVERY_MODE === "true";
 
 function createMcpServer(): McpServer {
   const server = new McpServer({
@@ -49,6 +52,12 @@ function createMcpServer(): McpServer {
   registerTransactionTools(server);
   registerWatchlistTools(server);
   registerRiskMarginTools(server);
+
+  if (TOOL_DISCOVERY_MODE) {
+    registerDiscoveryTools(server);
+    console.error("[TastyTrade] TOOL_DISCOVERY_MODE enabled: discovery meta-tools registered (list_tool_categories, search_tools, get_tool_details).");
+  }
+
   registerAccountResources(server);
   registerWatchlistResources(server);
 
