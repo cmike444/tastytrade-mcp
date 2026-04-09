@@ -139,8 +139,19 @@ export function renderAuthorizationPage(params: {
           return;
         }
 
-        window.location.href = data.redirect_url;
-        setTimeout(function() { window.close(); }, 300);
+        var redirectUrl = data.redirect_url;
+        var isCustomScheme = !/^https?:/i.test(redirectUrl);
+
+        var card = document.querySelector('.card');
+        card.innerHTML = '<h1 style="color:#4ade80;margin-bottom:1rem;">Authorization successful</h1>' +
+          '<p style="color:#94a3b8;margin-bottom:1.5rem;">You may close this tab and return to Claude Desktop.</p>' +
+          '<a id="return-link" href="' + redirectUrl.replace(/"/g, '%22') + '" style="color:#3b82f6;font-size:0.9rem;">' +
+          (isCustomScheme ? 'Click here to return to Claude Desktop' : 'Click here if you are not redirected') +
+          '</a>';
+
+        if (!isCustomScheme) {
+          setTimeout(function() { window.location.href = redirectUrl; }, 1500);
+        }
       } catch (err) {
         approveBtn.disabled = false;
         approveBtn.textContent = 'Authorize';
