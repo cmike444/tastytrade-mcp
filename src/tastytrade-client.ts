@@ -4,6 +4,9 @@ import WebSocket from "ws";
 (global as any).WebSocket = WebSocket;
 (global as any).window = { WebSocket, setTimeout, clearTimeout };
 
+const KEEPALIVE_BUFFER_SECONDS = 60;
+const KEEPALIVE_FALLBACK_INTERVAL_MS = 55 * 60 * 1000;
+
 let client: TastytradeClient | null = null;
 let isAuthenticated = false;
 
@@ -85,4 +88,63 @@ export async function disconnectClient(): Promise<void> {
     client = null;
     isAuthenticated = false;
   }
+}
+
+export function startKeepalive(): () => void {
+  let cancelled = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  function deriveInterval(): number {
+    const expiresIn = client?.accessToken?.expiresIn;
+    if (typeof expiresIn === "number") {
+      return Math.max(5000, (expiresIn - KEEPALIVE_BUFFER_SECONDS) * 1000);
+    }
+    return KEEPALIVE_FALLBACK_INTERVAL_MS;
+  }
+
+  async function keepalive(): Promise<void> {
+    if (cancelled) return;
+
+    console.error("[TastyTrade] Keepalive: pinging TastyTrade...");
+
+    let pingOk = false;
+    if (isAuthenticated && client) {
+      try {
+        await client.accountsAndCustomersService.getCustomerAccounts();
+        pingOk = true;
+        console.error("[TastyTrade] Keepalive: ping succeeded.");
+      } catch (err: any) {
+        console.error(`[TastyTrade] Keepalive: ping failed — ${err?.message ?? err}`);
+      }
+    }
+
+    if (!pingOk || !isAuthenticated) {
+      console.error("[TastyTrade] Keepalive: re-authenticating...");
+      try {
+        const result = await autoAuthenticate();
+        console.error(`[TastyTrade] Keepalive: re-authentication succeeded — ${result}`);
+      } catch (err: any) {
+        console.error(`[TastyTrade] Keepalive: re-authentication failed — ${err?.message ?? err}`);
+      }
+    }
+
+    if (!cancelled) {
+      const interval = deriveInterval();
+      console.error(`[TastyTrade] Keepalive: next check in ${Math.round(interval / 1000)}s.`);
+      timer = setTimeout(keepalive, interval);
+    }
+  }
+
+  const interval = deriveInterval();
+  console.error(`[TastyTrade] Keepalive: scheduled, first check in ${Math.round(interval / 1000)}s.`);
+  timer = setTimeout(keepalive, interval);
+
+  return function cancel() {
+    cancelled = true;
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    console.error("[TastyTrade] Keepalive: cancelled.");
+  };
 }

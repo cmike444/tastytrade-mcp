@@ -8,7 +8,7 @@ import type { ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { registerAuthTools } from "./tools/auth-tools.js";
 import { registerAccountTools } from "./tools/account-tools.js";
-import { autoAuthenticate } from "./tastytrade-client.js";
+import { autoAuthenticate, startKeepalive } from "./tastytrade-client.js";
 import { registerBalancePositionTools } from "./tools/balance-position-tools.js";
 import { registerOrderTools } from "./tools/order-tools.js";
 import { registerInstrumentTools } from "./tools/instrument-tools.js";
@@ -401,6 +401,17 @@ async function main() {
     console.error(`[TastyTrade] Auto-authentication failed: ${error.message}`);
     console.error("[TastyTrade] Server will start without TastyTrade connection. Use check_auth_status tool to retry.");
   }
+
+  const cancelKeepalive = startKeepalive();
+
+  function shutdown(signal: string) {
+    console.error(`[Process] Received ${signal}, shutting down.`);
+    cancelKeepalive();
+    process.exit(0);
+  }
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 
   if (MODE === "http") {
     await startHttpServer();
