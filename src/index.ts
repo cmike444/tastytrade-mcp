@@ -116,6 +116,11 @@ async function startHttpServer() {
 
   const sessions: Record<string, { transport: StreamableHTTPServerTransport; server: McpServer }> = {};
 
+  // Interval at which SSE keepalive comment lines are sent to every active
+  // GET /mcp connection. Replit's reverse-proxy has a ~60 s idle timeout for
+  // streaming responses; 25 s keeps us well under it.
+  const SSE_PING_MS = 25_000;
+
   app.get("/.well-known/oauth-protected-resource", (req, res) => {
     const baseUrl = getBaseUrl(req);
     res.set("Cache-Control", "public, max-age=3600");
@@ -308,9 +313,11 @@ async function startHttpServer() {
     await server.connect(transport);
 
     sessions[newSessionId] = { transport, server };
+    console.error(`[MCP] Session ${newSessionId} created. Active sessions: ${Object.keys(sessions).length}`);
 
     transport.onclose = () => {
       delete sessions[newSessionId];
+      console.error(`[MCP] Session ${newSessionId} closed. Active sessions: ${Object.keys(sessions).length}`);
     };
 
     await transport.handleRequest(req, res, req.body);
@@ -327,7 +334,26 @@ async function startHttpServer() {
       return;
     }
 
+    // Send an SSE comment (": ping") every SSE_PING_MS milliseconds to prevent
+    // Replit's reverse-proxy (and any intermediate load balancer) from closing
+    // idle SSE connections. SSE comments are invisible to MCP clients but reset
+    // the proxy's idle-read timer on every tick.
+    const sseKeepalive = setInterval(() => {
+      if (res.writableEnded) {
+        clearInterval(sseKeepalive);
+        return;
+      }
+      try {
+        res.write(": ping\n\n");
+      } catch {
+        clearInterval(sseKeepalive);
+      }
+    }, SSE_PING_MS);
+
+    res.on("close", () => clearInterval(sseKeepalive));
+
     await session.transport.handleRequest(req, res);
+    clearInterval(sseKeepalive);
   });
 
   app.delete("/mcp", async (req, res) => {
