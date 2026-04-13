@@ -282,6 +282,19 @@ async function startHttpServer() {
       return;
     }
 
+    // Session ID was provided but the server has no record of it (e.g. after a
+    // redeployment that cleared in-memory sessions).  Return a JSON-RPC error
+    // response with HTTP 404 so that spec-compliant clients know to re-initialize.
+    if (sessionId && !sessions[sessionId]) {
+      console.error(`[MCP] Session ${sessionId} not found (server restarted?). Client must re-initialize.`);
+      res.status(404).json({
+        jsonrpc: "2.0",
+        id: req.body?.id ?? null,
+        error: { code: -32001, message: "Session not found or expired. Please disconnect and reconnect the MCP integration to start a new session." },
+      });
+      return;
+    }
+
     if (!isInitializeRequest(req.body)) {
       res.status(400).json({ error: "First request must be an initialize request" });
       return;
