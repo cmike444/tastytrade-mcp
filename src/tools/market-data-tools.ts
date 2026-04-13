@@ -100,7 +100,7 @@ export function registerMarketDataTools(server: McpServer) {
         const queryParams = { symbols: symbols.join(",") };
         const metrics = await getClient().marketMetricsService.getMarketMetrics(queryParams);
         const result = applyMetricsProjection(metrics, detail);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
       }
