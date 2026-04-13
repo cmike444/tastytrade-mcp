@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
+import { formatApiError } from "./error-utils.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
@@ -17,7 +18,7 @@ export function registerRiskMarginTools(server: McpServer) {
         const margin = await getClient().marginRequirementsService.getMarginRequirements(accountNumber);
         return { content: [{ type: "text" as const, text: JSON.stringify(margin) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -36,7 +37,7 @@ export function registerRiskMarginTools(server: McpServer) {
         const margin = await getClient().marginRequirementsService.postMarginRequirements(accountNumber, order);
         return { content: [{ type: "text" as const, text: JSON.stringify(margin) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -54,7 +55,7 @@ export function registerRiskMarginTools(server: McpServer) {
         const margin = await getClient().riskParametersService.getEffectiveMarginRequirements(accountNumber, underlyingSymbol);
         return { content: [{ type: "text" as const, text: JSON.stringify(margin) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -71,7 +72,7 @@ export function registerRiskMarginTools(server: McpServer) {
         const limit = await getClient().riskParametersService.getPositionLimit(accountNumber);
         return { content: [{ type: "text" as const, text: JSON.stringify(limit) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -91,7 +92,7 @@ export function registerRiskMarginTools(server: McpServer) {
         const history = await getClient().netLiquidatingValueHistoryService.getNetLiquidatingValueHistory(accountNumber, queryParams);
         return { content: [{ type: "text" as const, text: JSON.stringify(history) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -108,7 +109,7 @@ export function registerRiskMarginTools(server: McpServer) {
         const value = await getClient().netLiquidatingValueHistoryService.getNetLiquidatingValue(accountNumber);
         return { content: [{ type: "text" as const, text: JSON.stringify(value) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );

@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
+import { formatApiError } from "./error-utils.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
@@ -40,7 +41,7 @@ export function registerAccountTools(server: McpServer) {
 
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );

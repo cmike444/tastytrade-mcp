@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { isClientAuthenticated, disconnectClient, autoAuthenticate } from "../tastytrade-client.js";
+import { formatApiError } from "./error-utils.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
@@ -17,7 +18,7 @@ export function registerAuthTools(server: McpServer) {
         const result = await autoAuthenticate();
         return { content: [{ type: "text" as const, text: `Status: Reconnected. ${result}` }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Status: Not authenticated. ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Status: Not authenticated. ${formatApiError(error)}` }], isError: true };
       }
     }
   );

@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
+import { formatApiError } from "./error-utils.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
@@ -102,7 +103,7 @@ export function registerMarketDataTools(server: McpServer) {
         const result = applyMetricsProjection(metrics, detail);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -130,7 +131,7 @@ export function registerMarketDataTools(server: McpServer) {
         }
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -161,7 +162,7 @@ export function registerMarketDataTools(server: McpServer) {
         }
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -206,7 +207,7 @@ export function registerMarketDataTools(server: McpServer) {
         const projected = collectedEvents.map(e => projectQuote(e, detail));
         return { content: [{ type: "text" as const, text: JSON.stringify(projected) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -263,7 +264,7 @@ export function registerMarketDataTools(server: McpServer) {
         const projected = candles.map(c => projectCandle(c, detail));
         return { content: [{ type: "text" as const, text: JSON.stringify(projected) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -321,7 +322,7 @@ export function registerMarketDataTools(server: McpServer) {
         const projected = resultData.map((e: any) => projectGreeks(e, detail));
         return { content: [{ type: "text" as const, text: JSON.stringify(projected) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -336,7 +337,7 @@ export function registerMarketDataTools(server: McpServer) {
         const token = await getClient().accountsAndCustomersService.getApiQuoteToken();
         return { content: [{ type: "text" as const, text: JSON.stringify(token) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );

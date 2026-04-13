@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
+import { formatApiError } from "./error-utils.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 const DESTRUCTIVE = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true } as const;
@@ -113,7 +114,7 @@ export function registerOrderTools(server: McpServer) {
 
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -136,7 +137,7 @@ export function registerOrderTools(server: McpServer) {
         const result = await getClient().orderService.postOrderDryRun(accountNumber, order);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -160,7 +161,7 @@ export function registerOrderTools(server: McpServer) {
         const result = await getClient().orderService.replacementOrderDryRun(accountNumber, orderId, replacementOrder);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -183,7 +184,7 @@ export function registerOrderTools(server: McpServer) {
         const result = await getClient().orderService.createOrder(accountNumber, order);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -201,7 +202,7 @@ export function registerOrderTools(server: McpServer) {
         const result = await getClient().orderService.cancelOrder(accountNumber, orderId);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -225,7 +226,7 @@ export function registerOrderTools(server: McpServer) {
         const result = await getClient().orderService.replaceOrder(accountNumber, orderId, replacementOrder);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -246,7 +247,7 @@ export function registerOrderTools(server: McpServer) {
         const result = await getClient().orderService.editOrder(accountNumber, orderId, edit);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -270,7 +271,7 @@ export function registerOrderTools(server: McpServer) {
         const result = await getClient().orderService.createComplexOrder(accountNumber, order);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -288,7 +289,7 @@ export function registerOrderTools(server: McpServer) {
         const result = await getClient().orderService.cancelComplexOrder(accountNumber, orderId);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -306,7 +307,7 @@ export function registerOrderTools(server: McpServer) {
         const result = await getClient().orderService.postReconfirmOrder(accountNumber, orderId);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );

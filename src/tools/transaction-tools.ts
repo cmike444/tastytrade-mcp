@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
+import { formatApiError } from "./error-utils.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
@@ -88,7 +89,7 @@ export function registerTransactionTools(server: McpServer) {
         const result = applyTransactionProjection(transactions, limit, detail);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -106,7 +107,7 @@ export function registerTransactionTools(server: McpServer) {
         const transaction = await getClient().transactionsService.getTransaction(accountNumber, transactionId);
         return { content: [{ type: "text" as const, text: JSON.stringify(transaction) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
@@ -123,7 +124,7 @@ export function registerTransactionTools(server: McpServer) {
         const fees = await getClient().transactionsService.getTotalFees(accountNumber);
         return { content: [{ type: "text" as const, text: JSON.stringify(fees) }] };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }
     }
   );
