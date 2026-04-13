@@ -4,7 +4,6 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import express from "express";
-import type { ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { registerAuthTools } from "./tools/auth-tools.js";
 import { registerAccountTools } from "./tools/account-tools.js";
@@ -67,29 +66,6 @@ function createMcpServer(): McpServer {
 const BEARER_TOKEN = process.env.MCP_BEARER_TOKEN;
 const MODE = process.env.MCP_TRANSPORT || "stdio";
 
-/**
- * Wraps `res.writeHead` to inject a Cache-Control header into any response
- * written by the MCP transport (which writes headers internally via the Hono
- * Node adapter, bypassing Express header helpers).  Must be called before the
- * transport's `handleRequest` to take effect.
- */
-function injectCacheControlHeader(res: express.Response, value: string): void {
-  const original = (res as unknown as ServerResponse).writeHead.bind(res);
-  (res as unknown as ServerResponse).writeHead = function (
-    statusCode: number,
-    ...args: any[]
-  ): ServerResponse {
-    if (!res.headersSent) {
-      const lastArg = args[args.length - 1];
-      if (lastArg && typeof lastArg === "object" && !Array.isArray(lastArg)) {
-        lastArg["Cache-Control"] = lastArg["Cache-Control"] ?? value;
-      } else {
-        args.push({ "Cache-Control": value });
-      }
-    }
-    return original(statusCode, ...args);
-  } as typeof original;
-}
 
 function getBaseUrl(req: express.Request): string {
   const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
@@ -296,14 +272,9 @@ async function startHttpServer() {
   });
 
   app.post("/mcp", async (req, res) => {
-    if (!authenticateRequest(req, res)) return;
-
-    // MCP responses must not be cached by HTTP intermediaries: tool call results
-    // contain dynamic financial data.  Prompt-level caching (Anthropic/OpenAI)
-    // is achieved through deterministic tool ordering, not HTTP caching.
-    injectCacheControlHeader(res, "no-store");
-
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
+    console.error(`[MCP] POST sessionId=${sessionId || "none"} method=${req.body?.method || "?"}`);
+    if (!authenticateRequest(req, res)) return;
 
     if (sessionId && sessions[sessionId]) {
       const { transport } = sessions[sessionId];
@@ -333,12 +304,9 @@ async function startHttpServer() {
   });
 
   app.get("/mcp", async (req, res) => {
-    if (!authenticateRequest(req, res)) return;
-
-    // SSE streams are inherently non-cacheable.
-    injectCacheControlHeader(res, "no-store");
-
     const sessionId = req.headers["mcp-session-id"] as string;
+    console.error(`[MCP] GET sessionId=${sessionId || "none"}`);
+    if (!authenticateRequest(req, res)) return;
     const session = sessions[sessionId];
 
     if (!session) {
