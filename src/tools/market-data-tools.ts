@@ -5,6 +5,13 @@ import { formatApiError } from "./error-utils.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
+function coerceToArray(val: unknown): unknown {
+  if (typeof val === "string") {
+    try { return JSON.parse(val); } catch { return val; }
+  }
+  return val;
+}
+
 type DetailTier = "summary" | "standard" | "full";
 
 const CANDLE_SUMMARY_FIELDS = ["eventSymbol", "time", "open", "high", "low", "close"];
@@ -92,7 +99,7 @@ export function registerMarketDataTools(server: McpServer) {
     "get_market_metrics",
     "Get market metrics (volatility data, IV rank, IV percentile) for given symbols. Includes options Greeks data like implied volatility. Use 'detail' to control response size: 'summary' returns symbol, IV rank, IV percentile; 'standard' returns common volatility fields (default); 'full' returns the complete API payload.",
     {
-      symbols: z.array(z.string()).describe("Array of symbols to get market metrics for (e.g., ['AAPL', 'TSLA'])"),
+      symbols: z.preprocess(coerceToArray, z.array(z.string())).describe("Array of symbols to get market metrics for (e.g., ['AAPL', 'TSLA'])"),
       detail: z.enum(["summary", "standard", "full"]).default("standard").describe("Response detail level: 'summary' (symbol, IV rank, IV percentile), 'standard' (common volatility fields, default), 'full' (complete raw payload)"),
     },
     READ_ONLY,
@@ -171,7 +178,7 @@ export function registerMarketDataTools(server: McpServer) {
     "get_quote",
     "Get real-time quote data for one or more symbols using DXLink. Use 'detail' to control response size: 'summary' returns only bid, ask, last, and symbol; 'standard' returns common quote fields (default); 'full' returns the raw DXLink event.",
     {
-      symbols: z.array(z.string()).describe("Array of symbols to get quotes for (e.g., ['AAPL', 'TSLA'])"),
+      symbols: z.preprocess(coerceToArray, z.array(z.string())).describe("Array of symbols to get quotes for (e.g., ['AAPL', 'TSLA'])"),
       timeoutMs: z.number().default(5000).describe("Timeout in milliseconds to wait for quotes (default 5000)"),
       detail: z.enum(["summary", "standard", "full"]).default("standard").describe("Response detail level: 'summary' (bid, ask, last, symbol), 'standard' (common quote fields, default), 'full' (complete raw DXLink event)"),
     },
@@ -273,7 +280,7 @@ export function registerMarketDataTools(server: McpServer) {
     "get_options_greeks",
     "Get options Greeks (delta, gamma, theta, vega, rho) by subscribing to Greeks events via DXLink for specific option symbols. Use 'detail' to control response size: 'summary' returns only symbol + the 5 Greek values; 'standard' returns Greeks plus implied volatility and underlying price (default); 'full' returns the raw DXLink event.",
     {
-      optionSymbols: z.array(z.string()).describe("Array of option streamer symbols. Use call-streamer-symbol or put-streamer-symbol from option chain endpoints."),
+      optionSymbols: z.preprocess(coerceToArray, z.array(z.string())).describe("Array of option streamer symbols. Use call-streamer-symbol or put-streamer-symbol from option chain endpoints."),
       timeoutMs: z.number().default(5000).describe("Timeout in milliseconds to wait for Greeks data (default 5000)"),
       detail: z.enum(["summary", "standard", "full"]).default("standard").describe("Response detail level: 'summary' (symbol + delta, gamma, theta, vega, rho), 'standard' (Greeks + implied volatility + underlying price, default), 'full' (complete raw DXLink event)"),
     },

@@ -5,6 +5,13 @@ import { formatApiError } from "./error-utils.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
+function coerceToArray(val: unknown): unknown {
+  if (typeof val === "string") {
+    try { return JSON.parse(val); } catch { return val; }
+  }
+  return val;
+}
+
 type DetailTier = "summary" | "standard" | "full";
 
 const OPTION_CHAIN_SUMMARY_FIELDS = [
@@ -84,7 +91,7 @@ export function registerInstrumentTools(server: McpServer) {
       symbol: z.string().optional().describe(
         "Symbol for the instrument. Required for: equity, equity_option, option_chain, nested_option_chain, compact_option_chain, future, future_option, future_option_chain, nested_future_option_chain, cryptocurrency, warrant."
       ),
-      symbols: z.array(z.string()).optional().describe(
+      symbols: z.preprocess(coerceToArray, z.array(z.string()).optional()).describe(
         "Array of symbols — used for equity_definitions, equity_options, futures, future_options, cryptocurrencies, warrants."
       ),
       lendability: z.string().optional().describe(
