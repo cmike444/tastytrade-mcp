@@ -3,6 +3,18 @@ import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
 import { formatApiError } from "./error-utils.js";
 
+function coerceToArray<T extends z.ZodTypeAny>(schema: z.ZodArray<T>, description: string) {
+  return z.preprocess(
+    (val) => {
+      if (typeof val === "string") {
+        try { return JSON.parse(val); } catch { return val; }
+      }
+      return val;
+    },
+    schema
+  ).describe(description);
+}
+
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 const DESTRUCTIVE = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true } as const;
 
@@ -19,7 +31,7 @@ const OrderSchema = z.object({
   "order-type": z.string().describe("Order type (e.g. 'Limit', 'Market', 'Stop', 'Stop Limit', 'Notional Market')"),
   price: z.number().optional().describe("Limit price for the order (required for Limit and Stop Limit orders)"),
   "price-effect": z.string().optional().describe("Price effect: 'Debit' (buying) or 'Credit' (selling)"),
-  legs: z.array(OrderLegSchema).describe("Array of order legs"),
+  legs: coerceToArray(z.array(OrderLegSchema), "Array of order legs"),
 });
 
 const ReplacementOrderSchema = z.object({
@@ -27,7 +39,7 @@ const ReplacementOrderSchema = z.object({
   "order-type": z.string().describe("Order type (e.g. 'Limit', 'Market', 'Stop', 'Stop Limit')"),
   price: z.number().optional().describe("Limit price for the replacement order"),
   "price-effect": z.string().optional().describe("Price effect: 'Debit' or 'Credit'"),
-  legs: z.array(OrderLegSchema).describe("Array of order legs"),
+  legs: coerceToArray(z.array(OrderLegSchema), "Array of order legs"),
 });
 
 const OrderEditSchema = z.object({
@@ -48,7 +60,7 @@ const ComplexOrderSchema = z.object({
   "order-type": z.string().describe("Order type (e.g. 'Limit', 'Market', 'Net Credit', 'Net Debit')"),
   price: z.number().optional().describe("Net price for the complex order"),
   "price-effect": z.string().optional().describe("Price effect: 'Debit' or 'Credit'"),
-  legs: z.array(ComplexOrderLegSchema).describe("Array of order legs for the complex order"),
+  legs: coerceToArray(z.array(ComplexOrderLegSchema), "Array of order legs for the complex order"),
   "source": z.string().optional().describe("Optional source identifier"),
 });
 
