@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
 import { formatApiError } from "./error-utils.js";
+import { coerceToArray } from "./schema-utils.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 const DESTRUCTIVE = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false } as const;
@@ -26,7 +27,7 @@ export function registerWatchlistTools(server: McpServer) {
         "Action to perform: 'get' one by name, 'create' a new one, 'replace' an existing one, or 'delete' one. To list all watchlists use the mcp://watchlists resource."
       ),
       watchlistName: z.string().optional().describe("Watchlist name — required for get, create, replace, and delete actions."),
-      watchlistEntries: z.array(WatchlistEntrySchema).optional().describe(
+      watchlistEntries: z.preprocess(coerceToArray, z.array(WatchlistEntrySchema).optional()).describe(
         "Array of watchlist entries (each with symbol and instrument-type) — required for create and replace actions."
       ),
     },

@@ -2,15 +2,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
 import { formatApiError } from "./error-utils.js";
+import { coerceToArray } from "./schema-utils.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
-
-function coerceToArray(val: unknown): unknown {
-  if (typeof val === "string") {
-    try { return JSON.parse(val); } catch { return val; }
-  }
-  return val;
-}
 
 type DetailTier = "summary" | "standard" | "full";
 
