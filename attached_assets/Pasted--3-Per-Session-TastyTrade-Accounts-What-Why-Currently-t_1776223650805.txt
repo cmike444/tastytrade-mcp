@@ -1,0 +1,44 @@
+#3 - Per-Session TastyTrade Accounts
+What & Why
+Currently the server holds one global TastyTrade client authenticated from environment variables. All connected users share that single account. This change makes every MCP session have its own isolated TastyTrade client, authenticated with credentials each user provides at login time via the OAuth authorization page.
+
+Done looks like
+The OAuth authorization page asks for TastyTrade credentials (client secret, refresh token, and a sandbox toggle) instead of the master bearer token
+Credentials are validated against TastyTrade during the authorization flow — invalid credentials are rejected before a session is granted
+Each MCP session has its own TastyTrade client instance; one user's session cannot touch another user's account
+All MCP tools and resources use the session-scoped client, not a global singleton
+The keepalive loop runs per-session and cleans up when the session ends; there is no longer a single global keepalive
+TASTYTRADE_CLIENT_SECRET / TASTYTRADE_REFRESH_TOKEN env vars are no longer required in HTTP mode (stdio mode continues to use them as before)
+Out of scope
+Storing or persisting credentials server-side after the session ends
+Supporting multiple simultaneous TastyTrade accounts within a single session
+Any UI changes beyond the credential form on the authorization page
+Tasks
+Make the TastyTrade client session-scoped — Refactor tastytrade-client.ts to remove the module-level client and isAuthenticated singletons. Expose a factory function that accepts credentials and returns a fully authenticated client instance. Keep autoAuthenticate() (reading from env vars) for stdio mode only. Move startKeepalive() to accept a client instance as a parameter so it can operate per-session rather than against a global variable.
+
+Thread a per-session client through the session map — Update the sessions map in index.ts to include a TastyTrade client alongside the transport and MCP server. When a new session is created on the first MCP request, attach the client that was authenticated during the authorization flow. Start a per-session keepalive at that point. On session close (transport.onclose), stop the keepalive and disconnect the client.
+
+Update the authorization page to collect TastyTrade credentials — Replace the master bearer token input in auth-page.ts with fields for TastyTrade client secret, refresh token, and a sandbox checkbox. Update labels and help text so users understand what to enter.
+
+Validate TastyTrade credentials during OAuth submit — Make the /oauth/authorize/submit handler in index.ts async. Use the submitted credentials to attempt real authentication against TastyTrade before issuing an authorization code. If authentication fails, return a clear error to the page. Attach the resulting authenticated client instance to the authorization code entry in oauth-provider.ts (or store it in a short-lived in-memory map keyed by code) so it can be retrieved at token exchange time.
+
+Bind the authenticated client to the session at token exchange — When /oauth/token is called, look up and transfer the pre-authenticated TastyTrade client from the authorization code entry to the token entry. When the first MCP session is created using that token, move the client into the session. Ensure the client is cleaned up if the token expires before a session is created.
+
+Update all tools and resources to accept a session-scoped client — Update every tool registration function and both resource registration functions so they receive and use the per-session TastyTrade client instead of importing the global getClient(). The discovery tools do not use the TastyTrade client and require no changes.
+
+Relevant files
+src/index.ts
+src/tastytrade-client.ts
+src/auth-page.ts
+src/oauth-provider.ts
+src/tools/auth-tools.ts
+src/tools/account-tools.ts
+src/tools/balance-position-tools.ts
+src/tools/order-tools.ts
+src/tools/instrument-tools.ts
+src/tools/market-data-tools.ts
+src/tools/transaction-tools.ts
+src/tools/watchlist-tools.ts
+src/tools/risk-margin-tools.ts
+src/resources/account-resources.ts
+src/resources/watchlist-resources.ts
