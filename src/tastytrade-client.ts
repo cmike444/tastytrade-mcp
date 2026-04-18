@@ -19,6 +19,7 @@ let reconnectAttempts = 0;
 let currentConnectVersion = 0;
 let explicitlyDisconnecting = false;
 const listenedFeeds = new WeakSet<object>();
+let lastKeepaliveAt: number | null = null;
 
 function cancelPendingReconnect(): void {
   if (reconnectTimer !== null) {
@@ -198,6 +199,20 @@ export async function disconnectClient(): Promise<void> {
   }
 }
 
+export function getConnectionStatus() {
+  const expiresIn = (client as any)?.accessToken?.expiresIn;
+  const tokenExpiresAt =
+    typeof expiresIn === "number"
+      ? new Date(Date.now() + expiresIn * 1000).toISOString()
+      : null;
+  return {
+    isAuthenticated,
+    quoteStreamerConnected,
+    tokenExpiresAt,
+    lastKeepaliveAt: lastKeepaliveAt ? new Date(lastKeepaliveAt).toISOString() : null,
+  };
+}
+
 export function startKeepalive(): () => void {
   let cancelled = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -220,6 +235,7 @@ export function startKeepalive(): () => void {
       try {
         await client.accountsAndCustomersService.getCustomerAccounts();
         pingOk = true;
+        lastKeepaliveAt = Date.now();
         console.error("[TastyTrade] Keepalive: ping succeeded.");
       } catch (err: any) {
         console.error(`[TastyTrade] Keepalive: ping failed — ${err?.message ?? err}`);

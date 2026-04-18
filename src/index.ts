@@ -27,8 +27,11 @@ import {
   createAuthorizationCode,
   exchangeCode,
   validateAccessToken,
+  getOAuthMetrics,
 } from "./oauth-provider.js";
 import { renderAuthorizationPage } from "./auth-page.js";
+import { getConnectionStatus } from "./tastytrade-client.js";
+import { recordToolCall, recordHttpRequest, getMetricsSnapshot } from "./metrics.js";
 
 const TOOL_DISCOVERY_MODE = process.env.TOOL_DISCOVERY_MODE === "true";
 
@@ -37,6 +40,30 @@ function createMcpServer(): McpServer {
     name: "tastytrade-mcp-server",
     version: "1.0.0",
   });
+
+  // Wrap server.tool() so every registered handler is transparently instrumented
+  // with latency and error-rate tracking. The handler is always the last argument
+  // regardless of which overload is used.
+  const originalTool = (server.tool as Function).bind(server);
+  (server as any).tool = function (name: string, ...args: unknown[]) {
+    const lastIdx = args.length - 1;
+    const originalHandler = args[lastIdx] as (...a: unknown[]) => Promise<unknown>;
+    args[lastIdx] = async (...handlerArgs: unknown[]) => {
+      const start = Date.now();
+      let isError = false;
+      try {
+        const result = await originalHandler(...handlerArgs);
+        if ((result as any)?.isError) isError = true;
+        return result;
+      } catch (err) {
+        isError = true;
+        throw err;
+      } finally {
+        recordToolCall(name, Date.now() - start, isError);
+      }
+    };
+    return originalTool(name, ...args);
+  };
 
   // Tools are registered in a fixed deterministic order on every startup.
   // This ensures the tool list schema is identical across sessions, which is
@@ -114,12 +141,41 @@ async function startHttpServer() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  const sessions: Record<string, { transport: StreamableHTTPServerTransport; server: McpServer }> = {};
+  const sessions: Record<string, { transport: StreamableHTTPServerTransport; server: McpServer; createdAt: number }> = {};
 
   // Interval at which SSE keepalive comment lines are sent to every active
   // GET /mcp connection. Replit's reverse-proxy has a ~60 s idle timeout for
   // streaming responses; 25 s keeps us well under it.
   const SSE_PING_MS = 25_000;
+
+  // Count every HTTP request and its outcome for the /status metrics endpoint.
+  app.use((req, _res, next) => {
+    _res.on("finish", () => {
+      let path = req.path;
+      if (path.startsWith("/oauth/")) path = "/oauth/*";
+      else if (path.startsWith("/.well-known/")) path = "/.well-known/*";
+      recordHttpRequest(path, _res.statusCode);
+    });
+    next();
+  });
+
+  app.get("/status", (_req, res) => {
+    const snapshot = getMetricsSnapshot();
+    const sessionList = Object.entries(sessions).map(([id, s]) => ({
+      id,
+      ageSeconds: Math.floor((Date.now() - s.createdAt) / 1000),
+    }));
+    res.set("Cache-Control", "no-store");
+    res.json({
+      ...snapshot,
+      mcp: {
+        activeSessions: Object.keys(sessions).length,
+        sessions: sessionList,
+      },
+      tastytrade: getConnectionStatus(),
+      oauth: getOAuthMetrics(),
+    });
+  });
 
   app.get("/.well-known/oauth-protected-resource", (req, res) => {
     const baseUrl = getBaseUrl(req);
@@ -312,7 +368,7 @@ async function startHttpServer() {
     const server = createMcpServer();
     await server.connect(transport);
 
-    sessions[newSessionId] = { transport, server };
+    sessions[newSessionId] = { transport, server, createdAt: Date.now() };
     console.error(`[MCP] Session ${newSessionId} created. Active sessions: ${Object.keys(sessions).length}`);
 
     transport.onclose = () => {

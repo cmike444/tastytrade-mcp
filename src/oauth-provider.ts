@@ -165,3 +165,11 @@ export function validateAccessToken(tokenStr: string): AccessToken | null {
   }
   return token;
 }
+
+export function getOAuthMetrics() {
+  return {
+    registeredClients: clients.size,
+    activeAccessTokens: accessTokens.size,
+    pendingAuthCodes: authorizationCodes.size,
+  };
+}
