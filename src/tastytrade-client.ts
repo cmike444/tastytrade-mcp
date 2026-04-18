@@ -24,6 +24,82 @@ const listenedFeeds = new WeakSet<object>();
 let lastKeepaliveAt: number | null = null;
 let keepaliveActive = false;
 
+export interface CandleSubscriptionEntry {
+  symbol: string;
+  fromTime: number;
+  periodMinutes: number;
+  candleType: string;
+}
+
+const activeQuoteRefCounts: Map<string, number> = new Map();
+const activeCandleRefCounts: Map<string, { count: number; entry: CandleSubscriptionEntry }> = new Map();
+
+function candleKey(entry: CandleSubscriptionEntry): string {
+  return `${entry.symbol}|${entry.fromTime}|${entry.periodMinutes}|${String(entry.candleType)}`;
+}
+
+export function registerQuoteSubscriptions(symbols: string[]): void {
+  for (const s of symbols) {
+    activeQuoteRefCounts.set(s, (activeQuoteRefCounts.get(s) ?? 0) + 1);
+  }
+}
+
+export function unregisterQuoteSubscriptions(symbols: string[]): void {
+  for (const s of symbols) {
+    const count = activeQuoteRefCounts.get(s);
+    if (count !== undefined) {
+      if (count <= 1) {
+        activeQuoteRefCounts.delete(s);
+      } else {
+        activeQuoteRefCounts.set(s, count - 1);
+      }
+    }
+  }
+}
+
+export function registerCandleSubscription(entry: CandleSubscriptionEntry): void {
+  const key = candleKey(entry);
+  const existing = activeCandleRefCounts.get(key);
+  if (existing) {
+    activeCandleRefCounts.set(key, { count: existing.count + 1, entry });
+  } else {
+    activeCandleRefCounts.set(key, { count: 1, entry });
+  }
+}
+
+export function unregisterCandleSubscription(entry: CandleSubscriptionEntry): void {
+  const key = candleKey(entry);
+  const existing = activeCandleRefCounts.get(key);
+  if (existing) {
+    if (existing.count <= 1) {
+      activeCandleRefCounts.delete(key);
+    } else {
+      activeCandleRefCounts.set(key, { count: existing.count - 1, entry: existing.entry });
+    }
+  }
+}
+
+function replaySubscriptions(qs: any): void {
+  if (activeQuoteRefCounts.size > 0) {
+    const symbols = [...activeQuoteRefCounts.keys()];
+    console.warn(`[DXLink] Replaying ${symbols.length} quote subscription(s) after reconnect: ${symbols.join(", ")}`);
+    try {
+      qs.subscribe(symbols);
+    } catch (err: any) {
+      console.warn(`[DXLink] Failed to replay quote subscriptions: ${err?.message ?? err}`);
+    }
+  }
+
+  for (const { entry: sub } of activeCandleRefCounts.values()) {
+    console.warn(`[DXLink] Replaying candle subscription for ${sub.symbol} after reconnect.`);
+    try {
+      qs.subscribeCandles(sub.symbol, sub.fromTime, sub.periodMinutes, sub.candleType);
+    } catch (err: any) {
+      console.warn(`[DXLink] Failed to replay candle subscription for ${sub.symbol}: ${err?.message ?? err}`);
+    }
+  }
+}
+
 function cancelPendingReconnect(): void {
   if (reconnectTimer !== null) {
     clearTimeout(reconnectTimer);
@@ -141,6 +217,8 @@ function attachQuoteStreamerHandlers(c: TastytradeClient): void {
     reconnectAttempts = 0;
 
     attachFeedListeners(qs.dxLinkFeed, myVersion);
+
+    replaySubscriptions(qs);
   };
 }
 
@@ -218,6 +296,8 @@ export async function disconnectClient(): Promise<void> {
     explicitlyDisconnecting = true;
     cancelPendingReconnect();
     quoteStreamerConnected = false;
+    activeQuoteRefCounts.clear();
+    activeCandleRefCounts.clear();
     try {
       await client.quoteStreamer.disconnect();
     } catch {}

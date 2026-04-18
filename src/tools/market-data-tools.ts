@@ -1,6 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getClient } from "../tastytrade-client.js";
+import {
+  getClient,
+  registerQuoteSubscriptions,
+  unregisterQuoteSubscriptions,
+  registerCandleSubscription,
+  unregisterCandleSubscription,
+} from "../tastytrade-client.js";
 import { formatApiError } from "./error-utils.js";
 import { coerceToArray } from "./schema-utils.js";
 
@@ -195,11 +201,14 @@ export function registerMarketDataTools(server: McpServer) {
           await client.quoteStreamer.connect();
         }
 
-        client.quoteStreamer.subscribe(symbols);
-
-        await new Promise(resolve => setTimeout(resolve, timeoutMs));
-
-        client.quoteStreamer.removeEventListener(listener);
+        registerQuoteSubscriptions(symbols);
+        try {
+          client.quoteStreamer.subscribe(symbols);
+          await new Promise(resolve => setTimeout(resolve, timeoutMs));
+        } finally {
+          unregisterQuoteSubscriptions(symbols);
+          client.quoteStreamer.removeEventListener(listener);
+        }
 
         if (collectedEvents.length === 0) {
           return { content: [{ type: "text" as const, text: `No quote data received for ${symbols.join(', ')} within ${timeoutMs}ms. Market may be closed or symbols may be invalid.` }] };
@@ -247,11 +256,15 @@ export function registerMarketDataTools(server: McpServer) {
         fromDate.setDate(fromDate.getDate() - daysBack);
 
         const { CandleType } = await import("@tastytrade/api");
-        client.quoteStreamer.subscribeCandles(symbol, fromDate.getTime(), periodMinutes, CandleType.Minute);
-
-        await new Promise(resolve => setTimeout(resolve, timeoutMs));
-
-        client.quoteStreamer.removeEventListener(listener);
+        const candleEntry = { symbol, fromTime: fromDate.getTime(), periodMinutes, candleType: CandleType.Minute };
+        registerCandleSubscription(candleEntry);
+        try {
+          client.quoteStreamer.subscribeCandles(symbol, fromDate.getTime(), periodMinutes, CandleType.Minute);
+          await new Promise(resolve => setTimeout(resolve, timeoutMs));
+        } finally {
+          unregisterCandleSubscription(candleEntry);
+          client.quoteStreamer.removeEventListener(listener);
+        }
 
         if (collectedEvents.length === 0) {
           return { content: [{ type: "text" as const, text: `No candle data received for ${symbol} within ${timeoutMs}ms. Market may be closed.` }] };
@@ -297,11 +310,16 @@ export function registerMarketDataTools(server: McpServer) {
           await client.quoteStreamer.connect();
         }
 
-        client.quoteStreamer.subscribe(optionSymbols);
-
-        await new Promise(resolve => setTimeout(resolve, timeoutMs));
-
-        client.quoteStreamer.removeEventListener(listener);
+        // Greeks events are streamed via quoteStreamer.subscribe (same as quotes),
+        // so registering as quote subscriptions ensures replay after reconnect.
+        registerQuoteSubscriptions(optionSymbols);
+        try {
+          client.quoteStreamer.subscribe(optionSymbols);
+          await new Promise(resolve => setTimeout(resolve, timeoutMs));
+        } finally {
+          unregisterQuoteSubscriptions(optionSymbols);
+          client.quoteStreamer.removeEventListener(listener);
+        }
 
         const greeksData = collectedEvents.filter((e: any) =>
           e.eventType === 'Greeks' ||
