@@ -1,14 +1,16 @@
 import TastytradeClient from "@tastytrade/api";
 import WebSocket from "ws";
+import { createRequire } from "module";
 
 (global as any).WebSocket = WebSocket;
 (global as any).window = { WebSocket, setTimeout, clearTimeout };
 
 const KEEPALIVE_BUFFER_SECONDS = 60;
 const KEEPALIVE_FALLBACK_INTERVAL_MS = 55 * 60 * 1000;
-
 const RECONNECT_BASE_MS = 2000;
 const RECONNECT_MAX_MS = 60000;
+
+const _require = createRequire(import.meta.url);
 
 let client: TastytradeClient | null = null;
 let isAuthenticated = false;
@@ -96,21 +98,49 @@ function attachFeedListeners(feed: any, myVersion: number): void {
 
 function attachQuoteStreamerHandlers(c: TastytradeClient): void {
   const qs = c.quoteStreamer as any;
-  const originalConnect = qs.connect.bind(qs);
+  let activeDxLinkWsClient: any = null;
 
-  qs.connect = async function () {
+  qs.connect = async function patchedConnect() {
     cancelPendingReconnect();
     const myVersion = ++currentConnectVersion;
 
-    await originalConnect();
+    if (activeDxLinkWsClient !== null) {
+      try {
+        console.warn("[QuoteStreamer] Disconnecting previous WebSocket client before reconnect");
+        activeDxLinkWsClient.disconnect();
+      } catch (err: any) {
+        console.warn(`[QuoteStreamer] Error disconnecting old client: ${err?.message ?? err}`);
+      }
+      activeDxLinkWsClient = null;
+    }
+
+    const { DXLinkWebSocketClient } = _require("@dxfeed/dxlink-websocket-client");
+    const { DXLinkFeed, FeedContract, FeedDataFormat } = _require("@dxfeed/dxlink-feed");
+
+    const tokenResponse = await qs.accountsAndCustomersService.getApiQuoteToken();
+    qs.dxLinkUrl = tokenResponse["dxlink-url"];
+    qs.dxLinkAuthToken = tokenResponse["token"];
+
+    const wsClient = new DXLinkWebSocketClient();
+    activeDxLinkWsClient = wsClient;
+
+    wsClient.connect(qs.dxLinkUrl);
+    wsClient.setAuthToken(qs.dxLinkAuthToken);
+
+    qs.dxLinkFeed = new DXLinkFeed(wsClient, FeedContract.AUTO);
+    qs.dxLinkFeed.configure({
+      acceptAggregationPeriod: 10,
+      acceptDataFormat: FeedDataFormat.COMPACT,
+    });
+
+    qs.eventListeners.forEach((listener: any) =>
+      qs.dxLinkFeed.addEventListener(listener)
+    );
 
     quoteStreamerConnected = true;
     reconnectAttempts = 0;
 
-    const feed = qs.dxLinkFeed;
-    if (feed) {
-      attachFeedListeners(feed, myVersion);
-    }
+    attachFeedListeners(qs.dxLinkFeed, myVersion);
   };
 }
 
