@@ -167,9 +167,16 @@ export function validateAccessToken(tokenStr: string): AccessToken | null {
 }
 
 export function getOAuthMetrics() {
+  const now = Date.now();
+  const activeAccessTokens = Array.from(accessTokens.values()).filter(
+    (t) => t.expires_at > now
+  ).length;
+  const pendingAuthCodes = Array.from(authorizationCodes.values()).filter(
+    (c) => c.expires_at > now
+  ).length;
   return {
     registeredClients: clients.size,
-    activeAccessTokens: accessTokens.size,
-    pendingAuthCodes: authorizationCodes.size,
+    activeAccessTokens,
+    pendingAuthCodes,
   };
 }
