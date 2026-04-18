@@ -20,6 +20,7 @@ let currentConnectVersion = 0;
 let explicitlyDisconnecting = false;
 const listenedFeeds = new WeakSet<object>();
 let lastKeepaliveAt: number | null = null;
+let keepaliveActive = false;
 
 function cancelPendingReconnect(): void {
   if (reconnectTimer !== null) {
@@ -200,13 +201,14 @@ export async function disconnectClient(): Promise<void> {
 }
 
 export function getConnectionStatus() {
-  const expiresIn = (client as any)?.accessToken?.expiresIn;
+  const expiresIn = client?.accessToken?.expiresIn;
   const tokenExpiresAt =
     typeof expiresIn === "number"
       ? new Date(Date.now() + expiresIn * 1000).toISOString()
       : null;
   return {
     isAuthenticated,
+    keepaliveActive,
     quoteStreamerConnected,
     tokenExpiresAt,
     lastKeepaliveAt: lastKeepaliveAt ? new Date(lastKeepaliveAt).toISOString() : null,
@@ -273,12 +275,14 @@ export function startKeepalive(): () => void {
     }
   }
 
+  keepaliveActive = true;
   const interval = deriveInterval();
   console.error(`[TastyTrade] Keepalive: scheduled, first check in ${Math.round(interval / 1000)}s.`);
   timer = setTimeout(keepalive, interval);
 
   return function cancel() {
     cancelled = true;
+    keepaliveActive = false;
     if (timer !== null) {
       clearTimeout(timer);
       timer = null;

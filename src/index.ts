@@ -2,7 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { isInitializeRequest, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import express from "express";
 import { randomUUID } from "node:crypto";
 import { registerAuthTools } from "./tools/auth-tools.js";
@@ -43,17 +43,17 @@ function createMcpServer(): McpServer {
 
   // Wrap server.tool() so every registered handler is transparently instrumented
   // with latency and error-rate tracking. The handler is always the last argument
-  // regardless of which overload is used.
-  const originalTool = (server.tool as Function).bind(server);
-  (server as any).tool = function (name: string, ...args: unknown[]) {
+  // regardless of which overload is used (name+cb, name+desc+cb, name+schema+cb, etc.).
+  const originalTool = server.tool.bind(server);
+  server.tool = function (name: string, ...args: unknown[]) {
     const lastIdx = args.length - 1;
-    const originalHandler = args[lastIdx] as (...a: unknown[]) => Promise<unknown>;
-    args[lastIdx] = async (...handlerArgs: unknown[]) => {
+    const originalHandler = args[lastIdx] as (...a: unknown[]) => Promise<CallToolResult>;
+    args[lastIdx] = async (...handlerArgs: unknown[]): Promise<CallToolResult> => {
       const start = Date.now();
       let isError = false;
       try {
         const result = await originalHandler(...handlerArgs);
-        if ((result as any)?.isError) isError = true;
+        if (result.isError) isError = true;
         return result;
       } catch (err) {
         isError = true;
@@ -62,7 +62,7 @@ function createMcpServer(): McpServer {
         recordToolCall(name, Date.now() - start, isError);
       }
     };
-    return originalTool(name, ...args);
+    return Reflect.apply(originalTool, server, [name, ...args]) as ReturnType<typeof server.tool>;
   };
 
   // Tools are registered in a fixed deterministic order on every startup.
@@ -165,16 +165,19 @@ async function startHttpServer() {
       id,
       ageSeconds: Math.floor((Date.now() - s.createdAt) / 1000),
     }));
-    res.set("Cache-Control", "no-store");
-    res.json({
-      ...snapshot,
+    const payload = {
+      server: { ...snapshot.server, transportMode: MODE },
+      tools: snapshot.tools,
+      http: snapshot.http,
       mcp: {
         activeSessions: Object.keys(sessions).length,
         sessions: sessionList,
       },
       tastytrade: getConnectionStatus(),
       oauth: getOAuthMetrics(),
-    });
+    };
+    res.set("Cache-Control", "no-store");
+    res.type("application/json").send(JSON.stringify(payload, null, 2));
   });
 
   app.get("/.well-known/oauth-protected-resource", (req, res) => {
