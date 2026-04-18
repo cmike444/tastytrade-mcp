@@ -32,6 +32,7 @@ import {
 import { renderAuthorizationPage } from "./auth-page.js";
 import { getConnectionStatus } from "./tastytrade-client.js";
 import { recordToolCall, recordHttpRequest, getMetricsSnapshot } from "./metrics.js";
+import { logger } from "./logger.js";
 
 const TOOL_DISCOVERY_MODE = process.env.TOOL_DISCOVERY_MODE === "true";
 
@@ -81,7 +82,7 @@ function createMcpServer(): McpServer {
 
   if (TOOL_DISCOVERY_MODE) {
     registerDiscoveryTools(server);
-    console.error("[TastyTrade] TOOL_DISCOVERY_MODE enabled: discovery meta-tools registered (list_tool_categories, search_tools, get_tool_details).");
+    logger.info("[TastyTrade] TOOL_DISCOVERY_MODE enabled: discovery meta-tools registered (list_tool_categories, search_tools, get_tool_details).");
   }
 
   registerAccountResources(server);
@@ -193,14 +194,14 @@ async function startHttpServer() {
   });
 
   app.post("/oauth/register", (req, res) => {
-    console.error(`[OAuth] POST /oauth/register body:`, JSON.stringify(req.body));
+    logger.info(`[OAuth] POST /oauth/register body:`, JSON.stringify(req.body));
     const result = registerClient(req.body);
     if ("error" in result) {
-      console.error(`[OAuth] Registration failed:`, result.error);
+      logger.warn(`[OAuth] Registration failed:`, result.error);
       res.status(400).json({ error: "invalid_client_metadata", error_description: result.error });
       return;
     }
-    console.error(`[OAuth] Registered client: ${result.client_id} (${result.client_name})`);
+    logger.info(`[OAuth] Registered client: ${result.client_id} (${result.client_name})`);
     res.status(201).json(result);
   });
 
@@ -231,7 +232,7 @@ async function startHttpServer() {
     }
 
     const client = getClient(client_id);
-    console.error(`[OAuth] GET /oauth/authorize client_id=${client_id} found=${!!client}`);
+    logger.info(`[OAuth] GET /oauth/authorize client_id=${client_id} found=${!!client}`);
     if (!client) {
       res.status(400).json({ error: "invalid_client" });
       return;
@@ -257,21 +258,21 @@ async function startHttpServer() {
 
   app.post("/oauth/authorize/submit", (req, res) => {
     try {
-      console.error(`[OAuth] POST /oauth/authorize/submit body keys:`, Object.keys(req.body || {}));
+      logger.info(`[OAuth] POST /oauth/authorize/submit body keys:`, Object.keys(req.body || {}));
       const { client_id, redirect_uri, state, code_challenge, code_challenge_method, scope, token } =
         req.body as Record<string, string>;
 
-      console.error(`[OAuth] Submit: client_id=${client_id} redirect_uri=${redirect_uri}`);
+      logger.info(`[OAuth] Submit: client_id=${client_id} redirect_uri=${redirect_uri}`);
 
       const submitClient = getClient(client_id);
       if (!submitClient || !isClientRedirectValid(submitClient, redirect_uri)) {
-        console.error(`[OAuth] Submit error: invalid client or redirect. client=${!!submitClient}`);
+        logger.warn(`[OAuth] Submit error: invalid client or redirect. client=${!!submitClient}`);
         res.status(400).json({ error: "invalid_request", error_description: "Invalid client or redirect URI" });
         return;
       }
 
       if (!BEARER_TOKEN || token !== BEARER_TOKEN) {
-        console.error(`[OAuth] Submit: invalid bearer token`);
+        logger.warn(`[OAuth] Submit: invalid bearer token`);
         res.status(401).json({ error: "invalid_token" });
         return;
       }
@@ -284,44 +285,44 @@ async function startHttpServer() {
         scope: scope || "mcp:tools",
       });
 
-      console.error(`[OAuth] Submit: code created, returning redirect URL to client`);
+      logger.info(`[OAuth] Submit: code created, returning redirect URL to client`);
       const redirectUrl = new URL(redirect_uri);
       redirectUrl.searchParams.set("code", code);
       if (state) redirectUrl.searchParams.set("state", state);
       res.json({ redirect_url: redirectUrl.toString() });
     } catch (err) {
-      console.error(`[OAuth] Submit crash:`, err);
+      logger.error(`[OAuth] Submit crash:`, err);
       res.status(500).json({ error: "server_error", error_description: "Internal error during authorization" });
     }
   });
 
   app.post("/oauth/token", (req, res) => {
-    console.error(`[OAuth] POST /oauth/token body:`, JSON.stringify(req.body));
+    logger.info(`[OAuth] POST /oauth/token body:`, JSON.stringify(req.body));
     const { grant_type, code, client_id, code_verifier, redirect_uri, client_secret } = req.body as Record<
       string,
       string
     >;
 
     if (grant_type !== "authorization_code") {
-      console.error(`[OAuth] Token error: unsupported grant_type=${grant_type}`);
+      logger.warn(`[OAuth] Token error: unsupported grant_type=${grant_type}`);
       res.status(400).json({ error: "unsupported_grant_type" });
       return;
     }
 
     if (!code || !client_id || !code_verifier || !redirect_uri) {
-      console.error(`[OAuth] Token error: missing params code=${!!code} client_id=${!!client_id} verifier=${!!code_verifier} uri=${!!redirect_uri}`);
+      logger.warn(`[OAuth] Token error: missing params code=${!!code} client_id=${!!client_id} verifier=${!!code_verifier} uri=${!!redirect_uri}`);
       res.status(400).json({ error: "invalid_request" });
       return;
     }
 
     const tokenResult = exchangeCode(code, client_id, code_verifier, redirect_uri, client_secret);
     if (!tokenResult) {
-      console.error(`[OAuth] Token error: invalid_grant for client_id=${client_id}`);
+      logger.warn(`[OAuth] Token error: invalid_grant for client_id=${client_id}`);
       res.status(400).json({ error: "invalid_grant" });
       return;
     }
 
-    console.error(`[OAuth] Token issued for client_id=${client_id}`);
+    logger.info(`[OAuth] Token issued for client_id=${client_id}`);
     res.json({
       access_token: tokenResult.token,
       token_type: "Bearer",
@@ -337,7 +338,7 @@ async function startHttpServer() {
 
   app.post("/mcp", async (req, res) => {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
-    console.error(`[MCP] POST sessionId=${sessionId || "none"} method=${req.body?.method || "?"}`);
+    logger.info(`[MCP] POST sessionId=${sessionId || "none"} method=${req.body?.method || "?"}`);
     if (!authenticateRequest(req, res)) return;
 
     if (sessionId && sessions[sessionId]) {
@@ -350,7 +351,7 @@ async function startHttpServer() {
     // redeployment that cleared in-memory sessions).  Return a JSON-RPC error
     // response with HTTP 404 so that spec-compliant clients know to re-initialize.
     if (sessionId && !sessions[sessionId]) {
-      console.error(`[MCP] Session ${sessionId} not found (server restarted?). Client must re-initialize.`);
+      logger.warn(`[MCP] Session ${sessionId} not found (server restarted?). Client must re-initialize.`);
       res.status(404).json({
         jsonrpc: "2.0",
         id: req.body?.id ?? null,
@@ -372,11 +373,11 @@ async function startHttpServer() {
     await server.connect(transport);
 
     sessions[newSessionId] = { transport, server, createdAt: Date.now() };
-    console.error(`[MCP] Session ${newSessionId} created. Active sessions: ${Object.keys(sessions).length}`);
+    logger.info(`[MCP] Session ${newSessionId} created. Active sessions: ${Object.keys(sessions).length}`);
 
     transport.onclose = () => {
       delete sessions[newSessionId];
-      console.error(`[MCP] Session ${newSessionId} closed. Active sessions: ${Object.keys(sessions).length}`);
+      logger.info(`[MCP] Session ${newSessionId} closed. Active sessions: ${Object.keys(sessions).length}`);
     };
 
     await transport.handleRequest(req, res, req.body);
@@ -384,7 +385,7 @@ async function startHttpServer() {
 
   app.get("/mcp", async (req, res) => {
     const sessionId = req.headers["mcp-session-id"] as string;
-    console.error(`[MCP] GET sessionId=${sessionId || "none"}`);
+    logger.info(`[MCP] GET sessionId=${sessionId || "none"}`);
     if (!authenticateRequest(req, res)) return;
     const session = sessions[sessionId];
 
@@ -433,7 +434,7 @@ async function startHttpServer() {
   });
 
   app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    console.error("[Express] Unhandled error:", err);
+    logger.error("[Express] Unhandled error:", err);
     if (!res.headersSent) {
       res.status(500).json({ error: "server_error" });
     }
@@ -441,13 +442,13 @@ async function startHttpServer() {
 
   const port = parseInt(process.env.PORT || "5000", 10);
   app.listen(port, "0.0.0.0", () => {
-    console.error(`TastyTrade MCP Server running on http://0.0.0.0:${port}/mcp`);
-    console.error(`Health check: http://0.0.0.0:${port}/health`);
-    console.error("OAuth 2.1 endpoints enabled (PKCE + Dynamic Client Registration)");
+    logger.info(`TastyTrade MCP Server running on http://0.0.0.0:${port}/mcp`);
+    logger.info(`Health check: http://0.0.0.0:${port}/health`);
+    logger.info("OAuth 2.1 endpoints enabled (PKCE + Dynamic Client Registration)");
     if (BEARER_TOKEN) {
-      console.error("Bearer token authentication is ENABLED");
+      logger.info("Bearer token authentication is ENABLED");
     } else {
-      console.error("WARNING: No MCP_BEARER_TOKEN set. Server is unprotected!");
+      logger.warn("WARNING: No MCP_BEARER_TOKEN set. Server is unprotected!");
     }
   });
 }
@@ -456,22 +457,22 @@ async function startStdioServer() {
   const server = createMcpServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("TastyTrade MCP Server running on stdio");
+  logger.info("TastyTrade MCP Server running on stdio");
 }
 
 async function main() {
   try {
     const result = await autoAuthenticate();
-    console.error(`[TastyTrade] ${result}`);
+    logger.info(`[TastyTrade] ${result}`);
   } catch (error: any) {
-    console.error(`[TastyTrade] Auto-authentication failed: ${error.message}`);
-    console.error("[TastyTrade] Server will start without TastyTrade connection. Use check_auth_status tool to retry.");
+    logger.warn(`[TastyTrade] Auto-authentication failed: ${error.message}`);
+    logger.warn("[TastyTrade] Server will start without TastyTrade connection. Use check_auth_status tool to retry.");
   }
 
   const cancelKeepalive = startKeepalive();
 
   function shutdown(signal: string) {
-    console.error(`[Process] Received ${signal}, shutting down.`);
+    logger.info(`[Process] Received ${signal}, shutting down.`);
     cancelKeepalive();
     process.exit(0);
   }
@@ -487,14 +488,14 @@ async function main() {
 }
 
 process.on("uncaughtException", (err) => {
-  console.error("[Process] Uncaught exception:", err);
+  logger.error("[Process] Uncaught exception:", err);
 });
 
 process.on("unhandledRejection", (reason) => {
-  console.error("[Process] Unhandled rejection:", reason);
+  logger.error("[Process] Unhandled rejection:", reason);
 });
 
 main().catch((error) => {
-  console.error("Fatal error:", error);
+  logger.error("Fatal error:", error);
   process.exit(1);
 });
