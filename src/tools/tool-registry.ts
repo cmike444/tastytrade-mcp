@@ -57,7 +57,7 @@ const TOOL_REGISTRY: ToolEntry[] = [
   },
   {
     name: "get_positions",
-    description: "Get current positions for an account with optional filtering. For unfiltered balances use mcp://accounts/{account_id}/balances resource; for unfiltered positions use mcp://accounts/{account_id}/positions resource. Supports filtering by symbol or underlying symbol and detail-level projection.",
+    description: "Get current positions for an account with optional filtering. For unfiltered balances use mcp://accounts/{account_id}/balances resource; for unfiltered positions use mcp://accounts/{account_id}/positions resource. Supports filtering by symbol or underlying symbol and detail-level projection. Use 'format: html' for a visual positions table.",
     category: "Account",
     inputSchema: {
       type: "object",
@@ -66,6 +66,7 @@ const TOOL_REGISTRY: ToolEntry[] = [
         symbol: { type: "string", description: "Filter positions by specific symbol" },
         underlyingSymbol: { type: "string", description: "Filter positions by underlying symbol" },
         detail: { type: "string", enum: ["summary", "standard", "full"], description: "Response detail level: 'summary' (5 key fields), 'standard' (common fields, default), 'full' (complete raw payload)" },
+        format: { type: "string", enum: ["json", "html"], description: "Output format: 'json' (default) or 'html' for a visual positions table with P&L colour-coding" },
       },
       required: ["accountNumber"],
     },
@@ -439,13 +440,14 @@ const TOOL_REGISTRY: ToolEntry[] = [
   // ── Market Data ───────────────────────────────────────────────────────────
   {
     name: "get_market_metrics",
-    description: "Get market metrics (volatility data, IV rank, IV percentile) for given symbols. Use 'detail' to control response size: 'summary' returns symbol, IV rank, IV percentile; 'standard' returns common volatility fields (default); 'full' returns the complete API payload.",
+    description: "Get market metrics (volatility data, IV rank, IV percentile) for given symbols. Use 'detail' to control response size: 'summary' returns symbol, IV rank, IV percentile; 'standard' returns common volatility fields (default); 'full' returns the complete API payload. Use 'format: html' for a visual card with IV rank gauge.",
     category: "Market Data",
     inputSchema: {
       type: "object",
       properties: {
         symbols: { type: "array", items: { type: "string" }, description: "Array of symbols to get market metrics for (e.g., ['AAPL', 'TSLA'])" },
         detail: { type: "string", enum: ["summary", "standard", "full"], description: "Response detail level: 'summary' (symbol, IV rank, IV percentile), 'standard' (common volatility fields, default), 'full' (complete raw payload)" },
+        format: { type: "string", enum: ["json", "html"], description: "Output format: 'json' (default) or 'html' for a visual artifact with IV rank gauge cards" },
       },
       required: ["symbols"],
     },
@@ -482,7 +484,7 @@ const TOOL_REGISTRY: ToolEntry[] = [
   },
   {
     name: "get_quote",
-    description: "Get real-time quote data for one or more symbols using DXLink. Use 'detail' to control response size: 'summary' returns only bid, ask, last, and symbol; 'standard' returns common quote fields (default); 'full' returns the raw DXLink event.",
+    description: "Get real-time quote data for one or more symbols using DXLink. Use 'detail' to control response size: 'summary' returns only bid, ask, last, and symbol; 'standard' returns common quote fields (default); 'full' returns the raw DXLink event. Use 'format: html' for a visual ticker card.",
     category: "Market Data",
     inputSchema: {
       type: "object",
@@ -490,6 +492,7 @@ const TOOL_REGISTRY: ToolEntry[] = [
         symbols: { type: "array", items: { type: "string" }, description: "Array of symbols to get quotes for (e.g., ['AAPL', 'TSLA'])" },
         timeoutMs: { type: "number", description: "Timeout in milliseconds to wait for quotes (default 5000)" },
         detail: { type: "string", enum: ["summary", "standard", "full"], description: "Response detail level: 'summary' (bid, ask, last, symbol), 'standard' (common quote fields, default), 'full' (complete raw DXLink event)" },
+        format: { type: "string", enum: ["json", "html"], description: "Output format: 'json' (default) or 'html' for a visual ticker card artifact" },
       },
       required: ["symbols"],
     },
@@ -513,7 +516,7 @@ const TOOL_REGISTRY: ToolEntry[] = [
   },
   {
     name: "get_options_greeks",
-    description: "Get options Greeks (delta, gamma, theta, vega, rho) by subscribing to Greeks events via DXLink for specific option symbols. Use 'detail' to control response size: 'summary' returns symbol + 5 Greek values; 'standard' returns Greeks + implied volatility + underlying price (default); 'full' returns the raw DXLink event.",
+    description: "Get options Greeks (delta, gamma, theta, vega, rho) by subscribing to Greeks events via DXLink for specific option symbols. Use 'detail' to control response size: 'summary' returns symbol + 5 Greek values; 'standard' returns Greeks + implied volatility + underlying price (default); 'full' returns the raw DXLink event. Use 'format: html' for a visual Greeks card.",
     category: "Market Data",
     inputSchema: {
       type: "object",
@@ -521,6 +524,7 @@ const TOOL_REGISTRY: ToolEntry[] = [
         optionSymbols: { type: "array", items: { type: "string" }, description: "Array of option streamer symbols. Use call-streamer-symbol or put-streamer-symbol from option chain endpoints." },
         timeoutMs: { type: "number", description: "Timeout in milliseconds to wait for Greeks data (default 5000)" },
         detail: { type: "string", enum: ["summary", "standard", "full"], description: "Response detail level: 'summary' (symbol + delta, gamma, theta, vega, rho), 'standard' (Greeks + implied volatility + underlying price, default), 'full' (complete raw DXLink event)" },
+        format: { type: "string", enum: ["json", "html"], description: "Output format: 'json' (default) or 'html' for a visual Greeks card artifact" },
       },
       required: ["optionSymbols"],
     },
@@ -638,13 +642,14 @@ const TOOL_REGISTRY: ToolEntry[] = [
   },
   {
     name: "get_net_liq_history",
-    description: "Get net liquidating value history for an account over time.",
+    description: "Get net liquidating value history for an account over time. Use 'format: html' for an SVG line chart with area fill.",
     category: "Risk",
     inputSchema: {
       type: "object",
       properties: {
         accountNumber: { type: "string", description: "The account number" },
         timeBack: { type: "string", description: "Time period to look back (e.g., '1d', '1m', '3m', '1y', 'all')" },
+        format: { type: "string", enum: ["json", "html"], description: "Output format: 'json' (default) or 'html' for a visual SVG equity chart artifact" },
       },
       required: ["accountNumber"],
     },
@@ -696,12 +701,13 @@ const TOOL_REGISTRY: ToolEntry[] = [
   },
   {
     name: "get_backtest_results",
-    description: "Poll a previously submitted backtest for status, statistics, full trial-by-trial P&L, and equity curve snapshots. Trials and snapshots are returned in full without truncation.",
+    description: "Poll a previously submitted backtest for status, statistics, full trial-by-trial P&L, and equity curve snapshots. Trials and snapshots are returned in full without truncation. Use 'format: html' for a visual dashboard with stats bar, equity curve, and trial table.",
     category: "Backtesting",
     inputSchema: {
       type: "object",
       properties: {
         backtestId: { type: "string", description: "The backtest ID returned by run_backtest" },
+        format: { type: "string", enum: ["json", "html"], description: "Output format: 'json' (default) or 'html' for a visual backtest dashboard with stats, equity curve, and trial table" },
       },
       required: ["backtestId"],
     },

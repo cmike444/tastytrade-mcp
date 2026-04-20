@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
 import { formatApiError } from "./error-utils.js";
+import { renderPositions, extractItems } from "./render-utils.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
@@ -47,20 +48,25 @@ function applyPositionProjection(data: any, detail: DetailTier): any {
 export function registerBalancePositionTools(server: McpServer) {
   server.tool(
     "get_positions",
-    "Get current positions for an account with optional filtering. For unfiltered balances use the mcp://accounts/{account_id}/balances resource; for unfiltered positions use mcp://accounts/{account_id}/positions resource. This tool adds filtering by symbol or underlying symbol and detail-level projection. Use 'detail' to control response size: 'summary' returns 5 key fields per position (symbol, quantity, market-value, instrument-type, average-open-price), 'standard' returns common fields (default), 'full' returns the complete raw API payload.",
+    "Get current positions for an account with optional filtering. For unfiltered balances use the mcp://accounts/{account_id}/balances resource; for unfiltered positions use mcp://accounts/{account_id}/positions resource. This tool adds filtering by symbol or underlying symbol and detail-level projection. Use 'detail' to control response size: 'summary' returns 5 key fields per position (symbol, quantity, market-value, instrument-type, average-open-price), 'standard' returns common fields (default), 'full' returns the complete raw API payload. Use 'format: html' for a visual positions table.",
     {
       accountNumber: z.string().describe("The account number to get positions for"),
       symbol: z.string().optional().describe("Filter positions by specific symbol"),
       underlyingSymbol: z.string().optional().describe("Filter positions by underlying symbol"),
       detail: z.enum(["summary", "standard", "full"]).default("standard").describe("Response detail level: 'summary' (5 key fields), 'standard' (common fields, default), 'full' (complete raw payload)"),
+      format: z.enum(["json", "html"]).default("json").describe("Output format: 'json' (default) or 'html' for a visual positions table artifact with P&L colour-coding"),
     },
     READ_ONLY,
-    async ({ accountNumber, symbol, underlyingSymbol, detail }) => {
+    async ({ accountNumber, symbol, underlyingSymbol, detail, format }) => {
       try {
         const queryParams: Record<string, any> = {};
         if (symbol) queryParams.symbol = symbol;
         if (underlyingSymbol) queryParams["underlying-symbol"] = underlyingSymbol;
         const positions = await getClient().balancesAndPositionsService.getPositionsList(accountNumber, queryParams);
+        if (format === "html") {
+          const items = extractItems(positions);
+          return { content: [{ type: "text" as const, text: renderPositions(items) }] };
+        }
         const result = applyPositionProjection(positions, detail);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {

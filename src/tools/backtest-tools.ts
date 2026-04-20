@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient, requireSessionToken, registerCandleSubscription, unregisterCandleSubscription } from "../tastytrade-client.js";
 import { formatApiError } from "./error-utils.js";
+import { renderBacktestResults } from "./render-utils.js";
 
 const BACKTEST_BASE_URL = "https://backtester.vast.tastyworks.com";
 
@@ -176,12 +177,13 @@ export function registerBacktestTools(server: McpServer) {
 
   server.tool(
     "get_backtest_results",
-    "Poll a previously submitted backtest for status, statistics, full trial-by-trial P&L, and equity curve snapshots. Trials and snapshots are returned in full without truncation.",
+    "Poll a previously submitted backtest for status, statistics, full trial-by-trial P&L, and equity curve snapshots. Trials and snapshots are returned in full without truncation. Use 'format: html' for a visual dashboard with stats bar, equity curve, and scrollable trial table.",
     {
       backtestId: z.string().describe("The backtest ID returned by run_backtest"),
+      format: z.enum(["json", "html"]).default("json").describe("Output format: 'json' (default) or 'html' for a visual backtest dashboard with stats, equity curve, and trial table"),
     },
     READ_ONLY,
-    async ({ backtestId }) => {
+    async ({ backtestId, format }) => {
       try {
         const data = await backtestFetch(`/backtests/${encodeURIComponent(backtestId)}`);
         const raw = data?.data ?? data;
@@ -211,6 +213,10 @@ export function registerBacktestTools(server: McpServer) {
           cumulativeProfitLoss: s.cumulativeProfitLoss ?? s["cumulative-profit-loss"] ?? s.cumPnl ?? 0,
           underlyingPrice: s.underlyingPrice ?? s["underlying-price"] ?? null,
         }));
+
+        if (format === "html") {
+          return { content: [{ type: "text" as const, text: renderBacktestResults({ status, statistics, trials, snapshots }) }] };
+        }
 
         const result: Record<string, any> = { status };
         if (progress !== undefined) result.progress = progress;

@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
 import { formatApiError } from "./error-utils.js";
+import { renderNetLiqHistory, extractItems } from "./render-utils.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
@@ -79,17 +80,22 @@ export function registerRiskMarginTools(server: McpServer) {
 
   server.tool(
     "get_net_liq_history",
-    "Get net liquidating value history for an account over time.",
+    "Get net liquidating value history for an account over time. Use 'format: html' for an SVG line chart with area fill.",
     {
       accountNumber: z.string().describe("The account number"),
       timeBack: z.string().optional().describe("Time period to look back (e.g., '1d', '1m', '3m', '1y', 'all')"),
+      format: z.enum(["json", "html"]).default("json").describe("Output format: 'json' (default) or 'html' for a visual SVG equity chart artifact"),
     },
     READ_ONLY,
-    async ({ accountNumber, timeBack }) => {
+    async ({ accountNumber, timeBack, format }) => {
       try {
         const queryParams: Record<string, any> = {};
         if (timeBack) queryParams["time-back"] = timeBack;
         const history = await getClient().netLiquidatingValueHistoryService.getNetLiquidatingValueHistory(accountNumber, queryParams);
+        if (format === "html") {
+          const items = extractItems(history);
+          return { content: [{ type: "text" as const, text: renderNetLiqHistory(items) }] };
+        }
         return { content: [{ type: "text" as const, text: JSON.stringify(history) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };

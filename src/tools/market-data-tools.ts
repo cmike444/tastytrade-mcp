@@ -9,6 +9,7 @@ import {
 } from "../tastytrade-client.js";
 import { formatApiError } from "./error-utils.js";
 import { coerceToArray } from "./schema-utils.js";
+import { renderQuote, renderGreeks, renderMarketMetrics, extractItems } from "./render-utils.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
@@ -97,17 +98,22 @@ function applyMetricsProjection(data: any, detail: DetailTier): any {
 export function registerMarketDataTools(server: McpServer) {
   server.tool(
     "get_market_metrics",
-    "Get market metrics (volatility data, IV rank, IV percentile) for given symbols. Includes options Greeks data like implied volatility. Use 'detail' to control response size: 'summary' returns symbol, IV rank, IV percentile; 'standard' returns common volatility fields (default); 'full' returns the complete API payload.",
+    "Get market metrics (volatility data, IV rank, IV percentile) for given symbols. Includes options Greeks data like implied volatility. Use 'detail' to control response size: 'summary' returns symbol, IV rank, IV percentile; 'standard' returns common volatility fields (default); 'full' returns the complete API payload. Use 'format: html' for a visual card with IV rank gauge.",
     {
       symbols: z.preprocess(coerceToArray, z.array(z.string())).describe("Array of symbols to get market metrics for (e.g., ['AAPL', 'TSLA'])"),
       detail: z.enum(["summary", "standard", "full"]).default("standard").describe("Response detail level: 'summary' (symbol, IV rank, IV percentile), 'standard' (common volatility fields, default), 'full' (complete raw payload)"),
+      format: z.enum(["json", "html"]).default("json").describe("Output format: 'json' (default) or 'html' for a visual artifact with IV rank gauge cards"),
     },
     READ_ONLY,
-    async ({ symbols, detail }) => {
+    async ({ symbols, detail, format }) => {
       try {
         const queryParams = { symbols: symbols.join(",") };
         const metrics = await getClient().marketMetricsService.getMarketMetrics(queryParams);
         const result = applyMetricsProjection(metrics, detail);
+        if (format === "html") {
+          const items = extractItems(metrics);
+          return { content: [{ type: "text" as const, text: renderMarketMetrics(items) }] };
+        }
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
@@ -176,14 +182,15 @@ export function registerMarketDataTools(server: McpServer) {
 
   server.tool(
     "get_quote",
-    "Get real-time quote data for one or more symbols using DXLink. Use 'detail' to control response size: 'summary' returns only bid, ask, last, and symbol; 'standard' returns common quote fields (default); 'full' returns the raw DXLink event.",
+    "Get real-time quote data for one or more symbols using DXLink. Use 'detail' to control response size: 'summary' returns only bid, ask, last, and symbol; 'standard' returns common quote fields (default); 'full' returns the raw DXLink event. Use 'format: html' for a visual ticker card.",
     {
       symbols: z.preprocess(coerceToArray, z.array(z.string())).describe("Array of symbols to get quotes for (e.g., ['AAPL', 'TSLA'])"),
       timeoutMs: z.number().default(5000).describe("Timeout in milliseconds to wait for quotes (default 5000)"),
       detail: z.enum(["summary", "standard", "full"]).default("standard").describe("Response detail level: 'summary' (bid, ask, last, symbol), 'standard' (common quote fields, default), 'full' (complete raw DXLink event)"),
+      format: z.enum(["json", "html"]).default("json").describe("Output format: 'json' (default) or 'html' for a visual ticker card artifact"),
     },
     READ_ONLY,
-    async ({ symbols, timeoutMs, detail }) => {
+    async ({ symbols, timeoutMs, detail, format }) => {
       try {
         const client = getClient();
         const collectedEvents: any[] = [];
@@ -212,6 +219,10 @@ export function registerMarketDataTools(server: McpServer) {
 
         if (collectedEvents.length === 0) {
           return { content: [{ type: "text" as const, text: `No quote data received for ${symbols.join(', ')} within ${timeoutMs}ms. Market may be closed or symbols may be invalid.` }] };
+        }
+
+        if (format === "html") {
+          return { content: [{ type: "text" as const, text: renderQuote(collectedEvents) }] };
         }
 
         const projected = collectedEvents.map(e => projectQuote(e, detail));
@@ -312,14 +323,15 @@ export function registerMarketDataTools(server: McpServer) {
 
   server.tool(
     "get_options_greeks",
-    "Get options Greeks (delta, gamma, theta, vega, rho) by subscribing to Greeks events via DXLink for specific option symbols. Use 'detail' to control response size: 'summary' returns only symbol + the 5 Greek values; 'standard' returns Greeks plus implied volatility and underlying price (default); 'full' returns the raw DXLink event.",
+    "Get options Greeks (delta, gamma, theta, vega, rho) by subscribing to Greeks events via DXLink for specific option symbols. Use 'detail' to control response size: 'summary' returns only symbol + the 5 Greek values; 'standard' returns Greeks plus implied volatility and underlying price (default); 'full' returns the raw DXLink event. Use 'format: html' for a visual Greeks card.",
     {
       optionSymbols: z.preprocess(coerceToArray, z.array(z.string())).describe("Array of option streamer symbols. Use call-streamer-symbol or put-streamer-symbol from option chain endpoints."),
       timeoutMs: z.number().default(5000).describe("Timeout in milliseconds to wait for Greeks data (default 5000)"),
       detail: z.enum(["summary", "standard", "full"]).default("standard").describe("Response detail level: 'summary' (symbol + delta, gamma, theta, vega, rho), 'standard' (Greeks + implied volatility + underlying price, default), 'full' (complete raw DXLink event)"),
+      format: z.enum(["json", "html"]).default("json").describe("Output format: 'json' (default) or 'html' for a visual Greeks card artifact"),
     },
     READ_ONLY,
-    async ({ optionSymbols, timeoutMs, detail }) => {
+    async ({ optionSymbols, timeoutMs, detail, format }) => {
       try {
         const client = getClient();
         const collectedEvents: any[] = [];
@@ -363,6 +375,10 @@ export function registerMarketDataTools(server: McpServer) {
 
         if (resultData.length === 0) {
           return { content: [{ type: "text" as const, text: `No Greeks/quote data received for the provided option symbols within ${timeoutMs}ms. Verify the option symbols are valid streamer symbols.` }] };
+        }
+
+        if (format === "html") {
+          return { content: [{ type: "text" as const, text: renderGreeks(resultData) }] };
         }
 
         const projected = resultData.map((e: any) => projectGreeks(e, detail));
