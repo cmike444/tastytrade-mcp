@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homingo Map Report — 2026-04-20</title>
+<style>
+:root {
+  --bg: #f8fafc;
+  --card-bg: #ffffff;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --border: #e2e8f0;
+  --critical: #dc2626;
+  --high: #f59e0b;
+  --medium: #3b82f6;
+  --low: #22c55e;
+  --accent: #6366f1;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+header {
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--border);
+}
+
+header h1 {
+  font-size: 1.5rem;
+  margin-bottom: 0;
+}
+
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.home-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.home-link:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.meta-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.meta-item code {
+  font-family: "SF Mono", "Fira Code", monospace;
+  background: var(--border);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.8rem;
+}
+
+.section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.section-nav a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.section-nav a:hover {
+  background: #e0e7ff;
+  text-decoration: none;
+}
+
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+}
+
+.card-stat .card-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.card-stat .card-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-top: 0.25rem;
+}
+
+.card-pass { border-left: 4px solid var(--low); }
+.card-fail { border-left: 4px solid var(--critical); }
+
+section {
+  margin-bottom: 2rem;
+  scroll-margin-top: 3.5rem;
+}
+
+section h2 {
+  font-size: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.count {
+  font-weight: 400;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.skill-link {
+  color: inherit;
+  text-decoration-line: underline;
+  text-decoration-color: var(--border);
+  text-underline-offset: 2px;
+  transition: color 0.15s, text-decoration-color 0.15s;
+}
+.skill-link:hover {
+  color: var(--accent);
+  text-decoration-color: var(--accent);
+}
+
+.skill-ref {
+  display: block;
+}
+
+.skill-desc-preview {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.pair-sep {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 3px 0;
+}
+
+.heuristic-note {
+  background: #fefce8;
+  border: 1px solid #fde047;
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.85rem;
+  color: #713f12;
+  margin-bottom: 1rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card-bg);
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+thead th {
+  text-align: left;
+  padding: 0.75rem 1rem;
+  background: #f1f5f9;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+tbody td {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+details {
+  margin: 0.5rem 0;
+}
+
+summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.misroute-list {
+  list-style: none;
+  padding: 0.5rem 0;
+}
+
+.misroute-list li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.misroute-list li:last-child { border-bottom: none; }
+
+.prompt-text {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.misroute-detail {
+  font-size: 0.8rem;
+}
+
+.more {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.rewrite-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.rewrite-card h3 { margin-bottom: 0.5rem; }
+.rewrite-card .reasoning { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 0.75rem; }
+
+.rewrite-timeline { display: flex; flex-direction: column; gap: 0; }
+.timeline-step { border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem 1rem; background: var(--bg); }
+.timeline-step.timeline-original { border-left: 3px solid var(--text-muted); }
+.timeline-step.timeline-final { border-left: 3px solid #22c55e; }
+.timeline-label { display: inline-block; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.4rem; }
+.timeline-step.timeline-final .timeline-label { color: #22c55e; }
+.timeline-step pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 0.85rem; }
+.timeline-arrow { padding: 0.35rem 1rem; font-size: 0.8rem; color: var(--text-muted); font-style: italic; }
+.timeline-arrow em { font-style: normal; }
+
+.merge-card {
+  background: var(--card-bg);
+  border: 1px solid #a5b4fc;
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.merge-card h3 { margin-bottom: 0.5rem; }
+.merge-card .reasoning { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 0.75rem; }
+.merge-details { margin-top: 0.75rem; }
+
+.diff-view {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.diff-old, .diff-new {
+  border-radius: 6px;
+  padding: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.diff-old {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+.diff-new {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+.diff-old pre, .diff-new pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.8rem;
+  margin-top: 0.5rem;
+}
+
+.conflicts-with { font-size: 0.85rem; color: var(--text-muted); }
+.conflicts-with code { background: var(--border); padding: 1px 4px; border-radius: 3px; }
+
+.skill-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.skill-card h3 { margin-bottom: 0.5rem; }
+.skill-card code { background: var(--border); padding: 1px 4px; border-radius: 3px; font-size: 0.8rem; }
+
+.orchestrator-card {
+  border-left: 4px solid var(--accent);
+}
+
+.negative-triggers {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-top: 0.5rem;
+}
+
+.negative-triggers em {
+  background: #fef3c7;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-style: normal;
+  font-size: 0.8rem;
+}
+
+.section-desc {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.shard-details {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+footer {
+  margin-top: 3rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+footer code {
+  font-family: "SF Mono", "Fira Code", monospace;
+  background: var(--border);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+ol, ul { padding-left: 1.5rem; }
+li { margin-bottom: 0.25rem; }
+
+.callout {
+  background: #fefce8;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+.callout h2 { font-size: 1.1rem; margin-bottom: 0.5rem; }
+.callout code {
+  font-family: "SF Mono", "Fira Code", monospace;
+  background: #fef3c7;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.85rem;
+}
+
+.callout-success {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.callout-success code {
+  background: #dcfce7;
+}
+
+.skill-inventory {
+  margin-bottom: 2rem;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.skill-inventory summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.skill-inventory table { margin-top: 0.75rem; }
+
+.skill-desc {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  max-width: 600px;
+}
+
+@media (max-width: 768px) {
+  body { padding: 1rem; }
+  .summary-cards { grid-template-columns: 1fr 1fr; }
+  .diff-view { grid-template-columns: 1fr; }
+  .meta-bar { flex-direction: column; gap: 0.5rem; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="header-row">
+    <h1>🐦 Homingo Map Report</h1>
+    <a href="../logs-viewer.html" class="home-link">← All Runs</a>
+  </div>
+  <div class="meta-bar">
+    <span class="meta-item"><strong>Date:</strong> 2026-04-20</span>
+    <span class="meta-item"><strong>Model:</strong> local-heuristic</span>
+    
+    <span class="meta-item"><strong>Provider:</strong> anthropic</span>
+    <span class="meta-item"><strong>Skills:</strong> 3</span>
+    <span class="meta-item"><strong>Duration:</strong> 0.0s</span>
+    <span class="meta-item"><strong>Tokens:</strong> 0 (0 in / 0 out)</span>
+    
+    <span class="meta-item"><strong>Git:</strong> <code>19f9ad2</code></span>
+  </div>
+</header>
+<details class="skill-inventory">
+  <summary>Skills in this run (3)</summary>
+  <table>
+    <thead><tr><th>Name</th><th>Description</th></tr></thead>
+    <tbody><tr>
+      <td><strong><a href="file:///home/runner/workspace/skills/markov-regime/SKILL.md" class="skill-link" title="/home/runner/workspace/skills/markov-regime/SKILL.md">markov-regime</a></strong></td>
+      <td class="skill-desc">Macro and volatility regime classifier for the 7-strategy options trading playbook. Classifies the current market regime (CALM, ELEVATED, or STRESS) using a 3-state Markov chain built from live tastytrade data — IV term structure, IV rank, VRP spread, vol momentum, and price/breadth trend. Applies regime-adjusted grade modifiers (up to ±2 tiers) and EV multipliers to every strategy recommendation. Use this skill for pre-market briefs, weekend reports, or any time you want regime context before evaluating a trade. Always run this BEFORE trading-strategies when sizing positions or grading setups on account 5WX12457. Triggers on: &quot;what's the regime&quot;, &quot;pre-market brief&quot;, &quot;weekend report&quot;, &quot;regime filter&quot;, &quot;how much risk should I take&quot;, &quot;market conditions&quot;, &quot;vol regime&quot;, &quot;is it a good environment for selling premium&quot;, &quot;macro context&quot;.
+</td>
+    </tr><tr>
+      <td><strong><a href="file:///home/runner/workspace/skills/tastytrade/SKILL.md" class="skill-link" title="/home/runner/workspace/skills/tastytrade/SKILL.md">tastytrade</a></strong></td>
+      <td class="skill-desc">Expert tastytrade trading assistant with full MCP integration. Use this skill whenever the user wants to: place or manage orders on tastytrade, check their account, positions, balances, or live orders; analyze option chains, implied volatility, term structure, or Greeks; generate trading charts (IV curves, payoff diagrams, equity curves, P&amp;L analytics, volatility surface, underlying comparisons); execute spreads, straddles, strangles, condors, iron condors, calendar spreads, or any multi-leg strategy; work with futures, futures options, cryptocurrencies, or equities on tastytrade; close or adjust existing positions; screen for trades or build watchlists. Also triggers when the user says &quot;tastytrade&quot;, &quot;tastyworks&quot;, &quot;my account&quot;, &quot;place a trade&quot;, &quot;show my positions&quot;, &quot;show my P&amp;L&quot;, &quot;what's my buying power&quot;, or asks for any trading chart or visualization.
+</td>
+    </tr><tr>
+      <td><strong><a href="file:///home/runner/workspace/skills/trading-strategies/SKILL.md" class="skill-link" title="/home/runner/workspace/skills/trading-strategies/SKILL.md">trading-strategies</a></strong></td>
+      <td class="skill-desc">Expert trading assistant for seven quantitative strategies: VRP, Pre-Earnings Volatility Expansion, Earnings Volatility Crush, Momentum Skew, Forward Factor calendar spreads, Supply and Demand Zones (bracket orders, spreads at zones, long options inside zones), and 0DTE VRP (systematic premium capture via iron condors and trend-following credit spreads on SPX/NDX/ES/NQ/ETFs with circuit breakers and AI optimization). Use when the user asks about options strategies, IV crush, earnings vol, calendar/vertical spreads, volatility skew, Kelly sizing, VRP, forward vol, term structure, supply/demand zones, institutional order flow, zone-based entries, 0DTE, zero-day options, intraday spreads, iron condors, EMA trend spreads, or wants to analyze a ticker. Triggers on OQuants, OptionQuants, &quot;which strategy should I use?&quot;, &quot;how do I trade earnings?&quot;, &quot;0DTE&quot;, or any vague options/directional trading question.
+</td>
+    </tr></tbody>
+  </table>
+</details>
+<main>
+
+<div class="summary-cards">
+  <div class="card card-stat">
+    <div class="card-label">Total Skills</div>
+    <div class="card-value">3</div>
+  </div>
+  <div class="card card-stat">
+    <div class="card-label">Clusters</div>
+    <div class="card-value">3</div>
+  </div>
+  <div class="card card-stat">
+    <div class="card-label">Merge Candidates</div>
+    <div class="card-value">0</div>
+  </div>
+  <div class="card card-stat">
+    <div class="card-label">Overloaded Skills</div>
+    <div class="card-value">2</div>
+  </div>
+</div><section><h2>Capability Clusters <span class="count">(3)</span></h2><table>
+      <thead><tr><th>Cluster</th><th>Size</th><th>Keywords</th><th>Skills</th></tr></thead>
+      <tbody><tr>
+        <td><strong>cluster-1</strong><br><span class="muted">regime, market, before</span></td>
+        <td>1</td>
+        <td>regime, market, before</td>
+        <td>markov-regime</td>
+      </tr><tr>
+        <td><strong>cluster-3</strong><br><span class="muted">spreads, earnings, options</span></td>
+        <td>1</td>
+        <td>spreads, earnings, options</td>
+        <td>trading-strategies</td>
+      </tr><tr>
+        <td><strong>cluster-2</strong><br><span class="muted">tastytrade, positions, trading</span></td>
+        <td>1</td>
+        <td>tastytrade, positions, trading</td>
+        <td>tastytrade</td>
+      </tr></tbody></table></section><section><h2>Overloaded Skills</h2><table>
+      <thead><tr><th>Skill</th><th>Description Length</th><th>Reason</th></tr></thead><tbody><tr>
+        <td><span class="skill-ref"><a href="file:///home/runner/workspace/skills/markov-regime/SKILL.md" class="skill-link" title="/home/runner/workspace/skills/markov-regime/SKILL.md"><strong>markov-regime</strong></a><span class="skill-desc-preview">Macro and volatility regime classifier for the 7-strategy options trading playbook. Classifies the current mar…</span></span></td>
+        <td>842 chars</td>
+        <td>6 distinct clauses suggest scope overload</td>
+      </tr><tr>
+        <td><span class="skill-ref"><a href="file:///home/runner/workspace/skills/tastytrade/SKILL.md" class="skill-link" title="/home/runner/workspace/skills/tastytrade/SKILL.md"><strong>tastytrade</strong></a><span class="skill-desc-preview">Expert tastytrade trading assistant with full MCP integration. Use this skill whenever the user wants to: plac…</span></span></td>
+        <td>865 chars</td>
+        <td>6 semicolons suggest multiple distinct responsibilities</td>
+      </tr></tbody></table></section><section><h2>Skill Profiles</h2><table>
+    <thead><tr><th>Skill</th><th>Cluster</th><th>Neighbors</th><th>Notes</th></tr></thead><tbody><tr>
+      <td><span class="skill-ref"><a href="file:///home/runner/workspace/skills/markov-regime/SKILL.md" class="skill-link" title="/home/runner/workspace/skills/markov-regime/SKILL.md"><strong>markov-regime</strong></a><span class="skill-desc-preview">Macro and volatility regime classifier for the 7-strategy options trading playbook. Classifies the current mar…</span></span></td>
+      <td>cluster-1</td>
+      <td>trading-strategies (9%), tastytrade (7%)</td>
+      <td>Overloaded · overlap degree 0</td>
+    </tr><tr>
+      <td><span class="skill-ref"><a href="file:///home/runner/workspace/skills/tastytrade/SKILL.md" class="skill-link" title="/home/runner/workspace/skills/tastytrade/SKILL.md"><strong>tastytrade</strong></a><span class="skill-desc-preview">Expert tastytrade trading assistant with full MCP integration. Use this skill whenever the user wants to: plac…</span></span></td>
+      <td>cluster-2</td>
+      <td>trading-strategies (9%), markov-regime (7%)</td>
+      <td>Overloaded · overlap degree 0</td>
+    </tr><tr>
+      <td><span class="skill-ref"><a href="file:///home/runner/workspace/skills/trading-strategies/SKILL.md" class="skill-link" title="/home/runner/workspace/skills/trading-strategies/SKILL.md"><strong>trading-strategies</strong></a><span class="skill-desc-preview">Expert trading assistant for seven quantitative strategies: VRP, Pre-Earnings Volatility Expansion, Earnings V…</span></span></td>
+      <td>cluster-3</td>
+      <td>tastytrade (9%), markov-regime (9%)</td>
+      <td>Within scope · overlap degree 0</td>
+    </tr></tbody></table></section>
+</main>
+<footer>
+  <p>Generated by <strong>Homingo</strong> · Run ID: <code>4c24258d</code></p>
+</footer>
+</body>
+</html>

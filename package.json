@@ -10,7 +10,10 @@
     "build": "tsc",
     "start": "node build/index.js",
     "dev": "tsc && node build/index.js",
-    "dev:http": "tsc && MCP_TRANSPORT=http node build/index.js"
+    "dev:http": "tsc && MCP_TRANSPORT=http node build/index.js",
+    "skills:map": "homingo map --skills-dir ./skills --no-open",
+    "skills:scan": "homingo scan --skills-dir ./skills --no-open",
+    "skills:lint": "homingo lint --skills-dir ./skills --dry-run --no-open"
   },
   "keywords": [
     "mcp",
@@ -31,5 +34,8 @@
     "typescript": "^5.9.3",
     "ws": "^8.19.0",
     "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "homingo": "^0.15.1"
   }
 }

@@ -1,0 +1,22 @@
+
+Linting 3 pairs (of 3 possible) — threshold: 90%
+Sim: claude-sonnet-4-20250514 | Gen: claude-haiku-4-5-20251001 (auto) | Prompts/pair: 10
+
+Dry run — pairs that would be tested:
+
+[90m┌────────────────────────────────────────[39m[90m┬───────────────[39m[90m┬──────────────────────────────────────────────────┐[39m
+[90m│[39m Skill Pair                             [90m│[39m Overlap Score [90m│[39m Reason                                           [90m│[39m
+[90m├────────────────────────────────────────[39m[90m┼───────────────[39m[90m┼──────────────────────────────────────────────────┤[39m
+[90m│[39m tastytrade ↔ trading-strategies        [90m│[39m 9%            [90m│[39m Shared keywords: expert, trading, assistant, us… [90m│[39m
+[90m├────────────────────────────────────────[39m[90m┼───────────────[39m[90m┼──────────────────────────────────────────────────┤[39m
+[90m│[39m markov-regime ↔ trading-strategies     [90m│[39m 9%            [90m│[39m Shared keywords: volatility, strategy, options,… [90m│[39m
+[90m├────────────────────────────────────────[39m[90m┼───────────────[39m[90m┼──────────────────────────────────────────────────┤[39m
+[90m│[39m markov-regime ↔ tastytrade             [90m│[39m 7%            [90m│[39m Shared keywords: volatility, strategy, options,… [90m│[39m
+[90m└────────────────────────────────────────[39m[90m┴───────────────[39m[90m┴──────────────────────────────────────────────────┘[39m
+
+Scope overload checks:
+  markov-regime: 842 chars ✓ ok
+  tastytrade: 865 chars ✓ ok
+  trading-strategies: 912 chars ✓ ok
+
+No API calls made.
