@@ -19,6 +19,8 @@ import { registerBacktestTools } from "./tools/backtest-tools.js";
 import { registerDiscoveryTools } from "./tools/discovery-tools.js";
 import { registerAccountResources } from "./resources/account-resources.js";
 import { registerWatchlistResources } from "./resources/watchlist-resources.js";
+import { registerSkillResources } from "./resources/skill-resources.js";
+import { registerSkillTools } from "./tools/skill-tools.js";
 import {
   getServerMetadata,
   getProtectedResourceMetadata,
@@ -72,6 +74,7 @@ function createMcpServer(): McpServer {
   // required for Anthropic prompt caching: the provider caches the tool
   // definitions prefix when it receives identical content on consecutive turns.
   registerAuthTools(server);
+  registerSkillTools(server);
   registerAccountTools(server);
   registerBalancePositionTools(server);
   registerOrderTools(server);
@@ -89,6 +92,7 @@ function createMcpServer(): McpServer {
 
   registerAccountResources(server);
   registerWatchlistResources(server);
+  registerSkillResources(server);
 
   return server;
 }
@@ -335,7 +339,7 @@ async function startHttpServer() {
 
   app.get("/health", (_req, res) => {
     res.set("Cache-Control", "no-store");
-    res.json({ status: "ok", transport: "streamable-http", tools: 41, oauth: true });
+    res.json({ status: "ok", transport: "streamable-http", tools: 43, oauth: true });
   });
 
   app.post("/mcp", async (req, res) => {

@@ -32,6 +32,38 @@ const TOOL_REGISTRY: ToolEntry[] = [
     inputSchema: { type: "object", properties: {}, required: [] },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   },
+  {
+    name: "list_skills",
+    description: "List all available skill guides on this server with their names and one-line descriptions.",
+    category: "Auth",
+    inputSchema: { type: "object", properties: {}, required: [] },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: "read_skill",
+    description: "Load a skill guide. Use 'name' to select a skill: tastytrade (MCP tool guide), trading-strategies (7-strategy playbook), markov-regime (regime classifier). Use 'section' to load a specific heading or reference file. Omit both for the full tastytrade guide.",
+    category: "Auth",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          enum: ["tastytrade", "trading-strategies", "markov-regime"],
+          description: "Which skill to load. Defaults to 'tastytrade'.",
+        },
+        section: {
+          type: "string",
+          description: "Optional section heading or reference file name (e.g. 'vrp', 'order-execution', 'mcp-tool-reference', 'Symbol Formats'). Omit for the full skill.",
+        },
+        listReferences: {
+          type: "boolean",
+          description: "If true, return the list of available reference file names for this skill.",
+        },
+      },
+      required: [],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
 
   // ── Account ───────────────────────────────────────────────────────────────
   {

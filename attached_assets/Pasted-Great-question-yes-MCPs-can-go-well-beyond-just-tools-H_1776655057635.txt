@@ -1,0 +1,97 @@
+Great question — yes, MCPs can go well beyond just tools. Here's the full picture of what's possible:
+
+## What MCP Can Expose
+
+**Core Primitives:**
+- **Tools** — callable functions (the workhround of most MCPs)
+- **Resources** — readable content (files, URLs, live data)
+- **Prompts** — reusable prompt templates with arguments
+- **Sampling** — let the server ask Claude to generate text (server → Claude calls)
+
+---
+
+## Hooks & Lifecycle Capabilities
+
+MCP 1.x (the current spec) doesn't have native "hooks" like lifecycle events, but you can *simulate* them:
+
+- **Startup tools** — a `initialize()` tool Claude calls first to load context/state
+- **Middleware pattern** — wrap every tool call with pre/post logic server-side
+- **Subscriptions** — resources can be *subscribed to*, pushing updates to the client when data changes (live market data, file watches, etc.)
+- **Server-sent events (SSE)** — the transport layer supports streaming, so the server can push notifications
+
+---
+
+## Scripts & Automation
+
+The server is just code — it can do anything a program can:
+
+- Run **shell scripts**, Python, Node, Rust binaries
+- Trigger **cron jobs** or scheduled tasks
+- Watch **file system changes** and expose them as resources
+- Spawn **subprocesses** (e.g., run a backtest, compile code)
+- Execute **database queries** and return structured results
+- Call **external APIs** and chain results
+
+---
+
+## What Makes an MCP Server *Amazing*
+
+**1. Stateful sessions**
+Keep state across tool calls within a session — conversation memory, running calculations, accumulated context.
+
+**2. Resource subscriptions**
+Push live data to Claude without being asked — price alerts, log tails, build status.
+
+**3. Prompt templates**
+Pre-baked prompts with arguments that Claude can invoke — essentially parameterized skills:
+```
+prompts/trading-brief(ticker="AAPL", expiry="2026-05-15")
+```
+
+**4. Composite tools**
+One tool call triggers a chain: fetch data → run script → write file → return structured result.
+
+**5. Embedded LLM calls (sampling)**
+The server can ask Claude to generate intermediate reasoning — server-side AI pipelines that Claude orchestrates without the user seeing the internals.
+
+**6. Authentication & multi-tenancy**
+Per-user state, OAuth flows, scoped permissions — the server controls access.
+
+**7. Tool annotations**
+Mark tools as `readOnly`, `destructive`, or `idempotent` so Claude (and the host) can make smarter decisions about when to confirm actions.
+
+---
+
+## Concrete Example: A "Skills MCP"
+
+```
+Tools:
+  load_skill(name)         → returns SKILL.md content
+  list_skills()            → returns available skill names + descriptions
+  run_skill_check(name)    → validates skill preconditions are met
+
+Resources:
+  skill://trading-strategies    → live SKILL.md content (subscribable)
+  skill://markov-regime         → same
+
+Prompts:
+  pre-market-brief(date, account)   → parameterized morning prompt
+  post-trade-review(ticker, pnl)    → journaling template
+
+Hooks (simulated):
+  on_session_start → auto-load account context + regime
+  on_tool_error   → log + suggest recovery action
+```
+
+---
+
+## The Ceiling
+
+The real ceiling isn't the MCP spec — it's **what the host allows**. Claude.ai has guardrails. But in Claude Code, or a custom host, you can build MCPs that:
+
+- Auto-approve certain tool calls
+- Chain dozens of tools autonomously
+- Maintain persistent memory across sessions
+- Integrate with your OS, IDE, databases, and external APIs seamlessly
+
+Want me to help design a specific "Skills + Hooks" MCP architecture for your trading setup?
