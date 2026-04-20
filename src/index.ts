@@ -15,6 +15,7 @@ import { registerMarketDataTools } from "./tools/market-data-tools.js";
 import { registerTransactionTools } from "./tools/transaction-tools.js";
 import { registerWatchlistTools } from "./tools/watchlist-tools.js";
 import { registerRiskMarginTools } from "./tools/risk-margin-tools.js";
+import { registerBacktestTools } from "./tools/backtest-tools.js";
 import { registerDiscoveryTools } from "./tools/discovery-tools.js";
 import { registerAccountResources } from "./resources/account-resources.js";
 import { registerWatchlistResources } from "./resources/watchlist-resources.js";
@@ -79,6 +80,7 @@ function createMcpServer(): McpServer {
   registerTransactionTools(server);
   registerWatchlistTools(server);
   registerRiskMarginTools(server);
+  registerBacktestTools(server);
 
   if (TOOL_DISCOVERY_MODE) {
     registerDiscoveryTools(server);
@@ -333,7 +335,7 @@ async function startHttpServer() {
 
   app.get("/health", (_req, res) => {
     res.set("Cache-Control", "no-store");
-    res.json({ status: "ok", transport: "streamable-http", tools: 35, oauth: true });
+    res.json({ status: "ok", transport: "streamable-http", tools: 41, oauth: true });
   });
 
   app.post("/mcp", async (req, res) => {

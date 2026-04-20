@@ -5,7 +5,8 @@ export type ToolCategory =
   | "Instruments"
   | "Watchlists"
   | "Risk"
-  | "Auth";
+  | "Auth"
+  | "Backtesting";
 
 export interface ToolEntry {
   name: string;
@@ -659,6 +660,104 @@ const TOOL_REGISTRY: ToolEntry[] = [
       required: ["accountNumber"],
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+
+  // ── Backtesting ───────────────────────────────────────────────────────────
+  {
+    name: "get_available_backtest_dates",
+    description: "List symbols available for backtesting along with their historical date ranges. Optionally filter by a specific symbol.",
+    category: "Backtesting",
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Optional symbol to filter results (e.g. 'SPY')" },
+      },
+      required: [],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: "run_backtest",
+    description: "Submit a multi-leg options backtest. Returns a backtestId immediately — does not wait for completion. Poll get_backtest_results with the returned ID.",
+    category: "Backtesting",
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Underlying symbol (e.g. 'SPY')" },
+        startDate: { type: "string", description: "Start date in YYYY-MM-DD format" },
+        endDate: { type: "string", description: "End date in YYYY-MM-DD format" },
+        legs: { type: "array", description: "Array of option legs with strikeSelection, direction, side, quantity, and daysUntilExpiration" },
+        entryConditions: { type: "object", description: "Entry conditions (frequency, VIX range, maximumActiveTrials, etc.)" },
+        exitConditions: { type: "object", description: "Optional exit conditions (takeProfitPercentage, stopLossPercentage, atDaysToExpiration, etc.)" },
+      },
+      required: ["symbol", "startDate", "endDate", "legs", "entryConditions"],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  },
+  {
+    name: "get_backtest_results",
+    description: "Poll a previously submitted backtest for status, statistics, full trial-by-trial P&L, and equity curve snapshots. Trials and snapshots are returned in full without truncation.",
+    category: "Backtesting",
+    inputSchema: {
+      type: "object",
+      properties: {
+        backtestId: { type: "string", description: "The backtest ID returned by run_backtest" },
+      },
+      required: ["backtestId"],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: "simulate_trade",
+    description: "One-shot historical price lookup for an option structure on specific dates. Provide OCC-format option symbols and an optional time window.",
+    category: "Backtesting",
+    inputSchema: {
+      type: "object",
+      properties: {
+        underlying: { type: "string", description: "Underlying symbol (e.g. 'SPY')" },
+        startTime: { type: "string", description: "Start time in ISO 8601 format" },
+        endTime: { type: "string", description: "End time in ISO 8601 format" },
+        legs: { type: "array", items: { type: "object", properties: { symbol: { type: "string" } } }, description: "Option legs using OCC-format symbols" },
+      },
+      required: ["underlying", "legs"],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: "analyze_earnings_backtest",
+    description: "Filter backtest trials by proximity to historical earnings dates and return filtered vs. baseline statistics side-by-side. Requires a completed backtest ID.",
+    category: "Backtesting",
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Underlying symbol (e.g. 'SPY')" },
+        backtestId: { type: "string", description: "A completed backtest ID from run_backtest" },
+        daysBeforeMin: { type: "number", description: "Minimum days before earnings to include a trial (default 10)" },
+        daysBeforeMax: { type: "number", description: "Maximum days before earnings to include a trial (default 21)" },
+        earningsLimit: { type: "number", description: "Max historical earnings dates to fetch (default 20)" },
+      },
+      required: ["symbol", "backtestId"],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: "analyze_zone_backtest",
+    description: "Find historical price touches of a supply/demand zone via candle data and simulate the option trade at each touch. Returns aggregate win rate, average P&L, and per-touch detail.",
+    category: "Backtesting",
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Underlying symbol (e.g. 'SPY')" },
+        zonePrice: { type: "number", description: "Central price level of the zone" },
+        zoneTolerance: { type: "number", description: "Fractional tolerance (default 0.005 = ±0.5%)" },
+        direction: { type: "string", enum: ["long", "short"], description: "Trade direction at zone touch" },
+        legs: { type: "array", items: { type: "object", properties: { symbol: { type: "string" } } }, description: "OCC-format option legs" },
+        lookbackDays: { type: "number", description: "Calendar days of history to search (default 504)" },
+        holdingPeriodDays: { type: "number", description: "Days to hold the position after entry" },
+      },
+      required: ["symbol", "zonePrice", "direction", "legs", "holdingPeriodDays"],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
 ];
 

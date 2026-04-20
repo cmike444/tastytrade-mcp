@@ -237,6 +237,20 @@ export function getClient(): TastytradeClient {
   return client;
 }
 
+export function getSessionToken(): string {
+  if (!client || !isAuthenticated) {
+    throw new Error("TastyTrade client is not authenticated. Use check_auth_status to reconnect.");
+  }
+  const token =
+    (client as any).httpClient?.accessToken ??
+    (client as any).accessToken?.token ??
+    (client as any).accessToken;
+  if (!token || typeof token !== "string") {
+    throw new Error("Session token is unavailable — try re-authenticating.");
+  }
+  return token;
+}
+
 export function isClientAuthenticated(): boolean {
   return isAuthenticated && client !== null;
 }
