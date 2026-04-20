@@ -1,0 +1,322 @@
+Here is the full v3 file — all three prior versions consolidated:
+
+---
+
+```markdown
+# Backtesting MCP — Full Strategy Coverage (v3)
+
+**Builds on:** backtesting-mcp-spec-v2.md  
+**Purpose:** Closes the two remaining coverage gaps using existing MCP data tools as pre/post-processing layers around the backtester. All 7 strategies are now fully or well-supported.
+
+---
+
+## Background — What the Backtesting API Supports
+
+**Base URL:** `https://backtester.vast.tastyworks.com`  
+**Auth:** Same session token already used in the MCP client.
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/available-dates` | Symbols with available historical date ranges |
+| POST | `/backtests` | Submit a backtest job |
+| GET | `/backtests/{id}` | Poll status; get results when complete |
+| POST | `/backtests/{id}/cancel` | Cancel a running job |
+| POST | `/simulate-trade` | Historical price lookup for a specific structure (no entry/exit logic) |
+
+### Strike Selection Methods
+
+The `strikeSelection` field on each leg accepts one of seven methods:
+
+| Method | What it does | Best use |
+|---|---|---|
+| `delta` | Target a specific delta at entry (1–100) | VRP strangles, 0DTE condors |
+| `percentageOTM` | Strike X% away from spot | Earnings crush, momentum skew |
+| `percentageOTMRelative` | Strike X% away from *another leg's strike* | Iron condor wings, defined-risk spreads |
+| `currentPriceOffset` | Strike at spot ± a fixed dollar amount | Defined-wing condors on high-priced underlyings |
+| `currentPriceOffsetRelative` | Dollar offset relative to another leg | Spread width control (e.g. "5 points wide") |
+| `currentPriceExactOffsetRelative` | Exact dollar offset relative to another leg | Precise ATM calendars, butterflies |
+| `premium` | Select strike matching a target credit | Premium-first sizing (e.g. "sell the $2.00 put") |
+
+**Key field:** `strikeRelativeLeg` — zero-indexed integer pointing to another leg. Required for all relative strike methods. Sign convention: negative = put side (below reference), positive = call side (above reference).
+
+### EntryConditions
+```ts
+{
+  frequency: "every day" | "on specific days of the week" | "on exact days to expiration match",
+  specificDays?: number[],               // e.g. [1,3,5] = Mon/Wed/Fri
+  maximumActiveTrials?: number,
+  maximumActiveTrialsBehavior?: "don't enter" | "close oldest",
+  minimumVIX?: number,
+  maximumVIX?: number
+}
+```
+
+### ExitConditions
+```ts
+{
+  takeProfitPercentage?: number,         // % of max profit
+  stopLossPercentage?: number,           // % of credit received
+  atDaysToExpiration?: number,
+  afterDaysInTrade?: number,
+  minimumVIX?: number
+}
+```
+
+---
+
+## Tools to Add (tastytrade-mcp / src/tools/backtest-tools.ts)
+
+### 1. `run_backtest`
+Submit a multi-leg backtest. Returns immediately with a job ID — do NOT block waiting for completion.
+
+**Parameters:**
+```ts
+{
+  symbol: string,
+  startDate: string,                     // "YYYY-MM-DD"
+  endDate: string,
+  legs: Leg[],
+  entryConditions: EntryConditions,
+  exitConditions: ExitConditions
+}
+```
+
+**Returns:** `{ backtestId: string, status: "pending" | "running" }`
+
+---
+
+### 2. `get_backtest_results`
+Poll a submitted backtest. The AI calls this repeatedly until `status === "completed"`.
+
+**Parameters:** `{ backtestId: string }`
+
+**Returns:**
+```ts
+{
+  status: "completed" | "running" | "pending",
+  progress: number,
+  statistics: {
+    totalTrades: number,
+    winRate: number,
+    averageProfitLoss: number,
+    totalProfitLoss: number,
+    maxDrawdown: number,
+    sharpeRatio?: number
+  },
+  trials: {
+    openDateTime: string,
+    closeDateTime: string,
+    profitLoss: number
+  }[],
+  snapshots: {
+    dateTime: string,
+    cumulativeProfitLoss: number,
+    underlyingPrice: number
+  }[]
+}
+```
+
+> Return `trials[]` in full — do not truncate. The AI skill layer summarizes.
+
+---
+
+### 3. `get_available_backtest_dates`
+**Parameters:** none (optional symbol filter)  
+**Returns:** `[{ symbol, earliestDate, latestDate }]`
+
+---
+
+### 4. `simulate_trade`
+Historical price lookup for a specific option structure at specific dates. Core engine for S&D zone validation and post-trade analysis.
+
+**Parameters:**
+```ts
+{
+  underlying: string,
+  startTime?: string,                    // ISO datetime
+  endTime?: string,
+  legs: { symbol: string }[]            // OCC-format option symbols
+}
+```
+
+**Returns:** `{ dateTime, price, effect, underlyingPrice, delta }[]` per date
+
+---
+
+### 5. `analyze_earnings_backtest` *(P1 — post-processing wrapper)*
+Combines `get_historical_earnings` + `get_backtest_results` + filtering into one call. Enables the Pre-Earnings Expansion strategy to be fully backtested.
+
+**Parameters:**
+```ts
+{
+  symbol: string,
+  backtestId: string,
+  daysBeforeMin?: number,               // default 10
+  daysBeforeMax?: number,               // default 21
+  earningsLimit?: number                // default 20
+}
+```
+
+**Internally:**
+1. `get_historical_earnings(symbol, limit)` → earningsDates[]
+2. `get_backtest_results(backtestId)` → trials[]
+3. Filter: keep trials where `openDateTime` falls [daysBeforeMin, daysBeforeMax] days before any earnings date
+4. Return filtered stats vs. unfiltered baseline side-by-side
+
+**Returns:**
+```ts
+{
+  filteredStats: { trialCount, winRate, avgPnL, totalPnL, expectancy },
+  baselineStats: { trialCount, winRate, avgPnL, totalPnL, expectancy },
+  earningsDatesUsed: string[],
+  matchedTrials: { openDateTime, closeDateTime, profitLoss, daysBeforeEarnings }[]
+}
+```
+
+---
+
+### 6. `analyze_zone_backtest` *(P2 — candle + simulate-trade loop)*
+Validates a Supply & Demand zone by finding every historical price touch via candles, then running `simulate-trade` for each touch window and aggregating P&L.
+
+**Parameters:**
+```ts
+{
+  symbol: string,
+  zonePrice: number,
+  zoneTolerance?: number,               // default 0.005 (±0.5%)
+  direction: "long" | "short",
+  legs: { symbol: string }[],           // OCC symbols, or empty for equity
+  lookbackDays?: number,                // default 504
+  holdingPeriodDays?: number
+}
+```
+
+**Internally:**
+1. `get_candles(symbol, periodMinutes=1440, daysBack=lookbackDays)` → OHLCV
+2. Find candles where price entered the zone band → touch dates
+3. `simulate-trade` for each touch (startTime=touch, endTime=touch+holdingPeriod)
+4. Aggregate across all touches
+
+**Returns:**
+```ts
+{
+  zonePrice: number,
+  touchCount: number,
+  winRate: number,
+  avgPnL: number,
+  expectancy: number,
+  touches: { date, entryPrice, exitPrice, profitLoss, won }[]
+}
+```
+
+---
+
+## Implementation Notes
+
+- **Auth:** Use existing `getClient()` session token. Add `BACKTEST_BASE_URL = "https://backtester.vast.tastyworks.com"` and make raw `fetch` calls with `Authorization: Bearer <token>`.
+- **File:** `src/tools/backtest-tools.ts` — register in `tool-registry.ts`
+- **Async:** `run_backtest` returns immediately. Never block waiting for completion.
+- **`strikeRelativeLeg` is zero-indexed.** Pass incorrectly and relative strikes will be wrong.
+- **`currentPriceExactOffsetRelative: 0`** pins a leg to the exact same strike as the reference — correct way to build ATM calendars.
+
+---
+
+## Strategy Coverage — All 7
+
+| Strategy | Backtestable? | Method | P&L Source |
+|---|---|---|---|
+| **VRP** (short strangle/straddle) | ✅ Full | `run_backtest` direct | backtester trials |
+| **0DTE VRP** (iron condor) | ✅ Full | `run_backtest` direct | backtester trials |
+| **Earnings Volatility Crush** | ✅ Full | `run_backtest` + earnings date mask | filtered trials |
+| **Forward Factor** (calendar) | ✅ Full | `run_backtest` direct | backtester trials |
+| **Momentum Skew** (debit spread) | ✅ Good | `run_backtest` on trending names | backtester trials |
+| **Pre-Earnings Expansion** (long straddle) | ✅ Full | `run_backtest` + `analyze_earnings_backtest` | filtered trials |
+| **Supply & Demand Zones** | ✅ Good | `get_candles` → zone touches → `analyze_zone_backtest` | aggregated simulate-trade P&L |
+
+---
+
+## Example Configs (Smoke Tests)
+
+### VRP — SPY 45 DTE Short Strangle, 16Δ
+```json
+{
+  "symbol": "SPY", "startDate": "2020-01-01", "endDate": "2025-12-31",
+  "legs": [
+    { "type": "equity-option", "direction": "short", "side": "put",  "quantity": 1, "daysUntilExpiration": 45, "strikeSelection": "delta", "delta": 16 },
+    { "type": "equity-option", "direction": "short", "side": "call", "quantity": 1, "daysUntilExpiration": 45, "strikeSelection": "delta", "delta": 16 }
+  ],
+  "entryConditions": { "frequency": "every day", "maximumActiveTrials": 1, "minimumVIX": 18 },
+  "exitConditions": { "takeProfitPercentage": 50, "stopLossPercentage": 200, "atDaysToExpiration": 21 }
+}
+```
+
+### 0DTE Iron Condor — SPY, Mon/Wed/Fri
+```json
+{
+  "symbol": "SPY", "startDate": "2023-01-01", "endDate": "2025-12-31",
+  "legs": [
+    { "type": "equity-option", "direction": "short", "side": "put",  "quantity": 1, "daysUntilExpiration": 0, "strikeSelection": "delta", "delta": 16 },
+    { "type": "equity-option", "direction": "long",  "side": "put",  "quantity": 1, "daysUntilExpiration": 0, "strikeSelection": "percentageOTMRelative", "percentageOTMRelative": -0.02, "strikeRelativeLeg": 0 },
+    { "type": "equity-option", "direction": "short", "side": "call", "quantity": 1, "daysUntilExpiration": 0, "strikeSelection": "delta", "delta": 16 },
+    { "type": "equity-option", "direction": "long",  "side": "call", "quantity": 1, "daysUntilExpiration": 0, "strikeSelection": "percentageOTMRelative", "percentageOTMRelative": 0.02, "strikeRelativeLeg": 2 }
+  ],
+  "entryConditions": { "frequency": "on specific days of the week", "specificDays": [1,3,5], "maximumActiveTrials": 1 },
+  "exitConditions": { "takeProfitPercentage": 50, "stopLossPercentage": 200 }
+}
+```
+
+### Forward Factor Calendar — SPY ATM
+```json
+{
+  "symbol": "SPY", "startDate": "2020-01-01", "endDate": "2025-12-31",
+  "legs": [
+    { "type": "equity-option", "direction": "short", "side": "call", "quantity": 1, "daysUntilExpiration": 14, "strikeSelection": "delta", "delta": 50 },
+    { "type": "equity-option", "direction": "long",  "side": "call", "quantity": 1, "daysUntilExpiration": 45, "strikeSelection": "currentPriceExactOffsetRelative", "currentPriceExactOffsetRelative": 0, "strikeRelativeLeg": 0 }
+  ],
+  "entryConditions": { "frequency": "every day", "maximumActiveTrials": 1, "maximumActiveTrialsBehavior": "close oldest" },
+  "exitConditions": { "takeProfitPercentage": 50, "atDaysToExpiration": 7 }
+}
+```
+
+### Momentum Skew — QQQ Debit Call Spread
+```json
+{
+  "symbol": "QQQ", "startDate": "2020-01-01", "endDate": "2025-12-31",
+  "legs": [
+    { "type": "equity-option", "direction": "long",  "side": "call", "quantity": 1, "daysUntilExpiration": 30, "strikeSelection": "delta", "delta": 40 },
+    { "type": "equity-option", "direction": "short", "side": "call", "quantity": 1, "daysUntilExpiration": 30, "strikeSelection": "percentageOTMRelative", "percentageOTMRelative": 0.05, "strikeRelativeLeg": 0 }
+  ],
+  "entryConditions": { "frequency": "every day", "maximumActiveTrials": 1, "maximumActiveTrialsBehavior": "don't enter" },
+  "exitConditions": { "takeProfitPercentage": 75, "stopLossPercentage": 100, "atDaysToExpiration": 10 }
+}
+```
+
+---
+
+## Implementation Priority
+
+| Tool | Priority | Complexity |
+|---|---|---|
+| `run_backtest` | P0 | Low |
+| `get_backtest_results` | P0 | Low |
+| `get_available_backtest_dates` | P1 | Low |
+| `simulate_trade` | P1 | Low |
+| `analyze_earnings_backtest` | P1 | Medium |
+| `analyze_zone_backtest` | P2 | Medium |
+
+---
+
+## Pre-Trade Execution Workflow
+
+```
+Signal fires (VRP / FF / momentum / zone alert)
+        ↓
+Options strategy?          Zone trade?
+run_backtest()             analyze_zone_backtest()
+        ↓
+Earnings strategy?
+analyze_earnings_backtest()
+        ↓
+Expectancy confirmed → size position (Kelly) → create_order()
+```
+```
