@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getClient, getSessionToken, registerCandleSubscription, unregisterCandleSubscription } from "../tastytrade-client.js";
+import { getClient, requireSessionToken, registerCandleSubscription, unregisterCandleSubscription } from "../tastytrade-client.js";
 import { formatApiError } from "./error-utils.js";
 
 const BACKTEST_BASE_URL = "https://backtester.vast.tastyworks.com";
@@ -9,7 +9,7 @@ const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: 
 const SIDE_EFFECT = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } as const;
 
 async function backtestFetch(path: string, options: RequestInit = {}): Promise<any> {
-  const token = getSessionToken();
+  const token = requireSessionToken();
   const url = `${BACKTEST_BASE_URL}${path}`;
   const res = await fetch(url, {
     ...options,

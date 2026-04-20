@@ -16,6 +16,11 @@ const _require = createRequire(import.meta.url);
 let client: TastytradeClient | null = null;
 let isAuthenticated = false;
 
+// Session token obtained via POST /sessions (username + password).
+// Required by TastyTrade internal services (e.g. backtesting API) that do not
+// accept OAuth JWTs. Separate from the OAuth access token stored in the SDK client.
+let sessionToken: string | null = null;
+
 let quoteStreamerConnected = false;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
@@ -237,15 +242,57 @@ export function getClient(): TastytradeClient {
   return client;
 }
 
+/**
+ * Login with username + password to obtain a TastyTrade session token.
+ * This token is required by internal services (e.g. the backtesting API) that
+ * do not accept the OAuth JWT that the SDK uses for the main API.
+ */
+export async function loginWithCredentials(
+  username: string,
+  password: string,
+  baseUrl: string
+): Promise<void> {
+  const res = await fetch(`${baseUrl}/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ login: username, password, "remember-me": true }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Session login failed (${res.status}): ${body.slice(0, 200)}`);
+  }
+  const data = (await res.json()) as { data?: { "session-token"?: string } };
+  const token = data?.data?.["session-token"];
+  if (!token || typeof token !== "string") {
+    throw new Error("Session login response did not contain a session-token");
+  }
+  sessionToken = token;
+}
+
+/** Returns the session token for internal TastyTrade services (e.g. backtesting). */
+export function requireSessionToken(): string {
+  if (!isAuthenticated) {
+    throw new Error("TastyTrade client is not authenticated. Use check_auth_status to reconnect.");
+  }
+  if (!sessionToken) {
+    throw new Error(
+      "Backtesting requires a TastyTrade session token. " +
+      "Set TASTYTRADE_USERNAME and TASTYTRADE_PASSWORD as secrets and re-authenticate."
+    );
+  }
+  return sessionToken;
+}
+
+/** Returns the OAuth JWT (for main API) or session token if one is available. */
 export function getSessionToken(): string {
   if (!client || !isAuthenticated) {
     throw new Error("TastyTrade client is not authenticated. Use check_auth_status to reconnect.");
   }
-  const token =
-    (client as any).httpClient?.accessToken ??
-    (client as any).accessToken?.token ??
-    (client as any).accessToken;
-  if (!token || typeof token !== "string") {
+  // Prefer the session token (works for internal services + the main API).
+  if (sessionToken) return sessionToken;
+  // Fall back to OAuth JWT (works for the main API only).
+  const token = client.accessToken?.token;
+  if (!token) {
     throw new Error("Session token is unavailable — try re-authenticating.");
   }
   return token;
@@ -291,14 +338,35 @@ export async function autoAuthenticate(): Promise<string> {
   const clientSecret = process.env.TASTYTRADE_CLIENT_SECRET;
   const refreshToken = process.env.TASTYTRADE_REFRESH_TOKEN;
   const sandbox = process.env.TASTYTRADE_SANDBOX === "true";
+  const username = process.env.TASTYTRADE_USERNAME;
+  const password = process.env.TASTYTRADE_PASSWORD;
 
   if (clientSecret && refreshToken) {
-    return authenticateOAuth({
+    const result = await authenticateOAuth({
       clientSecret,
       refreshToken,
       oauthScopes: ["read", "trade"],
       sandbox,
     });
+
+    // Obtain a session token if credentials are available.
+    // Internal TastyTrade services (e.g. backtesting API) require a session
+    // token from POST /sessions and will reject the OAuth JWT.
+    if (username && password) {
+      const baseUrl = sandbox
+        ? "https://api.cert.tastyworks.com"
+        : "https://api.tastyworks.com";
+      try {
+        await loginWithCredentials(username, password, baseUrl);
+        logger.info("[TastyTrade] Session token obtained (backtesting API enabled).");
+      } catch (err: any) {
+        logger.warn(
+          `[TastyTrade] Session token login failed — ${err.message}. Backtesting tools will not work.`
+        );
+      }
+    }
+
+    return result;
   }
 
   throw new Error(
@@ -321,19 +389,20 @@ export async function disconnectClient(): Promise<void> {
     } catch {}
     client = null;
     isAuthenticated = false;
+    sessionToken = null;
     explicitlyDisconnecting = false;
   }
 }
 
 export function getConnectionStatus() {
-  const expiresIn = client?.accessToken?.expiresIn;
-  const tokenExpiresAt =
-    typeof expiresIn === "number"
-      ? new Date(Date.now() + expiresIn * 1000).toISOString()
-      : null;
+  // Use the SDK's stable .expiration getter (based on token creation time + expiresIn)
+  // rather than recomputing Date.now() + expiresIn on every call, which would drift.
+  const expiration = client?.accessToken?.expiration;
+  const tokenExpiresAt = expiration instanceof Date ? expiration.toISOString() : null;
   return {
     isAuthenticated,
     keepaliveActive,
+    sessionTokenAvailable: sessionToken !== null,
     quoteStreamerConnected,
     tokenExpiresAt,
     lastKeepaliveAt: lastKeepaliveAt ? new Date(lastKeepaliveAt).toISOString() : null,
