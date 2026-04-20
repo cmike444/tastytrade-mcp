@@ -237,6 +237,28 @@ export function registerMarketDataTools(server: McpServer) {
     async ({ symbol, periodMinutes, daysBack, timeoutMs, limit, detail }) => {
       try {
         const client = getClient();
+
+        let streamerSymbol = symbol;
+        if (symbol.startsWith("/")) {
+          let instrument: any;
+          try {
+            instrument = await client.instrumentsService.getSingleFuture(symbol);
+          } catch (err: any) {
+            return {
+              content: [{ type: "text" as const, text: `Error: Could not look up futures instrument for ${symbol}: ${err?.message ?? err}` }],
+              isError: true,
+            };
+          }
+          const resolved = instrument?.["streamer-symbol"] ?? instrument?.streamerSymbol;
+          if (!resolved) {
+            return {
+              content: [{ type: "text" as const, text: `Error: No streamer symbol found for futures instrument ${symbol}. The contract may be expired or unavailable.` }],
+              isError: true,
+            };
+          }
+          streamerSymbol = resolved;
+        }
+
         const collectedEvents: any[] = [];
 
         const listener = (events: any[]) => {
@@ -256,10 +278,10 @@ export function registerMarketDataTools(server: McpServer) {
         fromDate.setDate(fromDate.getDate() - daysBack);
 
         const { CandleType } = await import("@tastytrade/api");
-        const candleEntry = { symbol, fromTime: fromDate.getTime(), periodMinutes, candleType: CandleType.Minute };
+        const candleEntry = { symbol: streamerSymbol, fromTime: fromDate.getTime(), periodMinutes, candleType: CandleType.Minute };
         registerCandleSubscription(candleEntry);
         try {
-          client.quoteStreamer.subscribeCandles(symbol, fromDate.getTime(), periodMinutes, CandleType.Minute);
+          client.quoteStreamer.subscribeCandles(streamerSymbol, fromDate.getTime(), periodMinutes, CandleType.Minute);
           await new Promise(resolve => setTimeout(resolve, timeoutMs));
         } finally {
           unregisterCandleSubscription(candleEntry);
@@ -267,10 +289,15 @@ export function registerMarketDataTools(server: McpServer) {
         }
 
         if (collectedEvents.length === 0) {
-          return { content: [{ type: "text" as const, text: `No candle data received for ${symbol} within ${timeoutMs}ms. Market may be closed.` }] };
+          return { content: [{ type: "text" as const, text: `No candle data received for ${symbol} (streamer: ${streamerSymbol}) within ${timeoutMs}ms. Market may be closed.` }] };
         }
 
         let candles = collectedEvents;
+        if (streamerSymbol !== symbol) {
+          candles = candles.map(c =>
+            c.eventSymbol === streamerSymbol ? { ...c, eventSymbol: symbol } : c
+          );
+        }
         if (limit > 0 && candles.length > limit) {
           candles = candles.slice(candles.length - limit);
         }
