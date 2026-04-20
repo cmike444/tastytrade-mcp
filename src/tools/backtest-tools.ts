@@ -9,7 +9,7 @@ const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: 
 const SIDE_EFFECT = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } as const;
 
 async function backtestFetch(path: string, options: RequestInit = {}): Promise<any> {
-  const token = requireSessionToken();
+  const token = await requireSessionToken();
   const url = `${BACKTEST_BASE_URL}${path}`;
   const res = await fetch(url, {
     ...options,

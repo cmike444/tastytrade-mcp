@@ -243,54 +243,74 @@ export function getClient(): TastytradeClient {
 }
 
 /**
- * Login with username + password to obtain a TastyTrade session token.
- * This token is required by internal services (e.g. the backtesting API) that
- * do not accept the OAuth JWT that the SDK uses for the main API.
+ * Fetches a backtester-compatible OAuth access token by calling /oauth/token
+ * with grant_type=refresh_token but WITHOUT the `scope` parameter.
+ *
+ * Why this is necessary:
+ * The TastyTrade SDK always sends `scope: "read trade"` when refreshing tokens.
+ * The backtesting server (backtester.vast.tastyworks.com) rejects tokens issued
+ * with a scope claim and only accepts scope-less tokens. Fetching the token
+ * directly without scope produces a functionally identical JWT that the
+ * backtesting API accepts.
  */
-export async function loginWithCredentials(
-  username: string,
-  password: string,
-  baseUrl: string
-): Promise<void> {
-  const res = await fetch(`${baseUrl}/sessions`, {
+async function fetchBacktestToken(): Promise<void> {
+  const clientSecret = process.env.TASTYTRADE_CLIENT_SECRET;
+  const refreshToken = process.env.TASTYTRADE_REFRESH_TOKEN;
+  const sandbox = process.env.TASTYTRADE_SANDBOX === "true";
+  if (!clientSecret || !refreshToken) {
+    throw new Error("TASTYTRADE_CLIENT_SECRET and TASTYTRADE_REFRESH_TOKEN must be set");
+  }
+  const baseUrl = sandbox
+    ? "https://api.cert.tastyworks.com"
+    : "https://api.tastyworks.com";
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+    client_secret: clientSecret,
+    // Intentionally no `scope` — scope-bearing tokens are rejected by the
+    // backtesting API even though the SDK uses them for the main API.
+  });
+  const res = await fetch(`${baseUrl}/oauth/token`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ login: username, password, "remember-me": true }),
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent": "tastytrade-sdk-js",
+    },
+    body: body.toString(),
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Session login failed (${res.status}): ${body.slice(0, 200)}`);
+    const text = await res.text().catch(() => "");
+    throw new Error(`Backtest token fetch failed (${res.status}): ${text.slice(0, 200)}`);
   }
-  const data = (await res.json()) as { data?: { "session-token"?: string } };
-  const token = data?.data?.["session-token"];
+  const data = (await res.json()) as { access_token?: string };
+  const token = data?.access_token;
   if (!token || typeof token !== "string") {
-    throw new Error("Session login response did not contain a session-token");
+    throw new Error("Backtest token response did not contain an access_token");
   }
   sessionToken = token;
 }
 
-/** Returns the session token for internal TastyTrade services (e.g. backtesting). */
-export function requireSessionToken(): string {
+/** Returns the scope-less OAuth token accepted by the backtesting API. */
+export async function requireSessionToken(): Promise<string> {
   if (!isAuthenticated) {
     throw new Error("TastyTrade client is not authenticated. Use check_auth_status to reconnect.");
   }
   if (!sessionToken) {
-    throw new Error(
-      "Backtesting requires a TastyTrade session token. " +
-      "Set TASTYTRADE_USERNAME and TASTYTRADE_PASSWORD as secrets and re-authenticate."
-    );
+    // Try to fetch it now if credentials are available
+    try {
+      await fetchBacktestToken();
+    } catch (err: any) {
+      throw new Error(`Backtesting token unavailable: ${err.message}`);
+    }
   }
-  return sessionToken;
+  return sessionToken!;
 }
 
-/** Returns the OAuth JWT (for main API) or session token if one is available. */
+/** Returns the OAuth JWT used by the SDK for the main TastyTrade API. */
 export function getSessionToken(): string {
   if (!client || !isAuthenticated) {
     throw new Error("TastyTrade client is not authenticated. Use check_auth_status to reconnect.");
   }
-  // Prefer the session token (works for internal services + the main API).
-  if (sessionToken) return sessionToken;
-  // Fall back to OAuth JWT (works for the main API only).
   const token = client.accessToken?.token;
   if (!token) {
     throw new Error("Session token is unavailable — try re-authenticating.");
@@ -338,35 +358,14 @@ export async function autoAuthenticate(): Promise<string> {
   const clientSecret = process.env.TASTYTRADE_CLIENT_SECRET;
   const refreshToken = process.env.TASTYTRADE_REFRESH_TOKEN;
   const sandbox = process.env.TASTYTRADE_SANDBOX === "true";
-  const username = process.env.TASTYTRADE_USERNAME;
-  const password = process.env.TASTYTRADE_PASSWORD;
 
   if (clientSecret && refreshToken) {
-    const result = await authenticateOAuth({
+    return authenticateOAuth({
       clientSecret,
       refreshToken,
       oauthScopes: ["read", "trade"],
       sandbox,
     });
-
-    // Obtain a session token if credentials are available.
-    // Internal TastyTrade services (e.g. backtesting API) require a session
-    // token from POST /sessions and will reject the OAuth JWT.
-    if (username && password) {
-      const baseUrl = sandbox
-        ? "https://api.cert.tastyworks.com"
-        : "https://api.tastyworks.com";
-      try {
-        await loginWithCredentials(username, password, baseUrl);
-        logger.info("[TastyTrade] Session token obtained (backtesting API enabled).");
-      } catch (err: any) {
-        logger.warn(
-          `[TastyTrade] Session token login failed — ${err.message}. Backtesting tools will not work.`
-        );
-      }
-    }
-
-    return result;
   }
 
   throw new Error(
@@ -402,7 +401,7 @@ export function getConnectionStatus() {
   return {
     isAuthenticated,
     keepaliveActive,
-    sessionTokenAvailable: sessionToken !== null,
+    backtestTokenAvailable: sessionToken !== null,
     quoteStreamerConnected,
     tokenExpiresAt,
     lastKeepaliveAt: lastKeepaliveAt ? new Date(lastKeepaliveAt).toISOString() : null,
