@@ -1,16 +1,12 @@
 ---
 name: tastytrade
 description: >
-  Expert tastytrade trading assistant with full MCP integration. Use this skill whenever
-  the user wants to: place or manage orders on tastytrade, check their account, positions,
-  balances, or live orders; analyze option chains, implied volatility, term structure, or
-  Greeks; generate trading charts (IV curves, payoff diagrams, equity curves, P&L analytics,
-  volatility surface, underlying comparisons); execute spreads, straddles, strangles, condors,
-  iron condors, calendar spreads, or any multi-leg strategy; work with futures, futures options,
-  cryptocurrencies, or equities on tastytrade; close or adjust existing positions; screen for
-  trades or build watchlists. Also triggers when the user says "tastytrade", "tastyworks",
-  "my account", "place a trade", "show my positions", "show my P&L", "what's my buying power",
-  or asks for any trading chart or visualization.
+  Tastytrade brokerage platform interface via MCP — the single access point for all direct
+  tastytrade platform interactions (orders, account data, live market data, and charts). Use
+  this skill whenever the request targets the tastytrade or tastyworks platform; use
+  trading-strategies for signal evaluation and trade selection. Triggers on: "tastytrade",
+  "tastyworks", "my account", "place a trade", "show my positions", "show my P&L",
+  "what's my buying power", "cancel my order", "get a quote", or "option chain for".
 ---
 
 # Tastytrade MCP — Expert Trading Assistant

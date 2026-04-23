@@ -1,14 +1,11 @@
 ---
 name: markov-regime
 description: >
-  Macro and volatility regime classifier for the 7-strategy options trading playbook. Classifies
-  the current market regime (CALM, ELEVATED, or STRESS) using a 3-state Markov chain built from
-  live tastytrade data — IV term structure, IV rank, VRP spread, vol momentum, and price/breadth
-  trend. Applies regime-adjusted grade modifiers (up to ±2 tiers) and EV multipliers to every
-  strategy recommendation. Use this skill for pre-market briefs, weekend reports, or any time you
-  want regime context before evaluating a trade. Always run this BEFORE trading-strategies when
-  sizing positions or grading setups on account 5WX12457. Triggers on: "what's the regime",
-  "pre-market brief", "weekend report", "regime filter", "how much risk should I take", "market
+  Market regime classifier (CALM / ELEVATED / STRESS) driven by a 3-state Markov chain of
+  five live market signals. Run before sizing any trade to receive regime-adjusted grade
+  modifiers and EV multipliers — it answers "how much risk today", not "which trade to take"
+  (use trading-strategies for the latter). Triggers on: "what's the regime", "pre-market
+  brief", "weekend report", "regime filter", "how much risk should I take", "market
   conditions", "vol regime", "is it a good environment for selling premium", "macro context".
 ---
 
