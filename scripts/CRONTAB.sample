@@ -1,0 +1,45 @@
+# TastyTrade Daily Report Bundle Prefetch Schedule
+# ─────────────────────────────────────────────────
+# Install with:  crontab -e   (paste the lines below)
+# Requires:      TT_USERNAME and TT_PASSWORD set in your crontab environment
+#                or sourced from a secrets file (see note below).
+#
+# Set environment at the top of crontab:
+#   TT_USERNAME=your@email.com
+#   TT_PASSWORD=your_password
+#
+# Or source a secrets file before each command:
+#   45 7 * * 1-5  source ~/.tt_secrets && python3 ~/path/to/scripts/prefetch.py --report morning
+#
+# Adjust the path below to your actual clone location.
+# All bundles are written to /tmp/tt_brief_<report>.json
+#
+# Schedule (all times ET — adjust for your timezone):
+# ─────────────────────────────────────────────────
+
+# Morning brief — 7:45 AM ET Mon–Fri (pre-market account snapshot + futures)
+45 7 * * 1-5  TT_USERNAME=your@email.com TT_PASSWORD=your_password python3 ~/tastytrade-mcp/scripts/prefetch.py --report morning
+
+# Open brief — 9:25 AM ET Mon–Fri (5 min before open, delta vs morning)
+25 9 * * 1-5  TT_USERNAME=your@email.com TT_PASSWORD=your_password python3 ~/tastytrade-mcp/scripts/prefetch.py --report open
+
+# Noon check — 12:00 PM ET Mon–Fri (midday refresh)
+0 12 * * 1-5  TT_USERNAME=your@email.com TT_PASSWORD=your_password python3 ~/tastytrade-mcp/scripts/prefetch.py --report noon
+
+# Pre-close — 3:45 PM ET Mon–Fri (15 min before close, 0DTE flags + circuit breaker)
+45 15 * * 1-5 TT_USERNAME=your@email.com TT_PASSWORD=your_password python3 ~/tastytrade-mcp/scripts/prefetch.py --report preclose
+
+# End of day — 4:15 PM ET Mon–Fri (after-hours, realized P&L + growth plan)
+15 16 * * 1-5 TT_USERNAME=your@email.com TT_PASSWORD=your_password python3 ~/tastytrade-mcp/scripts/prefetch.py --report eod
+
+# Weekend review — Saturday 9:00 AM (full watchlist scan + weekly P&L summary)
+0 9 * * 6     TT_USERNAME=your@email.com TT_PASSWORD=your_password python3 ~/tastytrade-mcp/scripts/prefetch.py --report weekend
+
+# ─────────────────────────────────────────────────
+# Notes:
+# - The morning bundle must run BEFORE open/noon/preclose/eod
+#   because intraday reports delta-compress against /tmp/tt_brief_morning.json.
+# - If the morning run fails, intraday reports fall back to a full account fetch.
+# - Session token is cached at /tmp/tt_session_cache.json (24-hour TTL).
+#   Only one login per day regardless of how many reports run.
+# - Add >> /tmp/tt_prefetch.log 2>&1 to each line to capture output for debugging.
