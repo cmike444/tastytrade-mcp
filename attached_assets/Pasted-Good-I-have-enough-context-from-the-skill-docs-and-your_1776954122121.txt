@@ -1,0 +1,152 @@
+Good — I have enough context from the skill docs and your workflow to give you a thorough answer without needing your local filesystem. Let me map this out.
+
+---
+
+## The Core Opportunity: Pre-Packaged Data Bundles
+
+Your reports today are conversational — Claude fetches everything on-demand, reads the raw responses, filters them, and *then* starts thinking. That's expensive. The optimization is to **move data fetching outside the Claude conversation entirely**, so each report starts with a pre-digested JSON bundle instead of raw MCP calls.
+
+---
+
+## Architecture: The Data Prefetch Layer
+
+### What it looks like
+
+```
+cron job (timed) → prefetch script → /tmp/tt_brief_<type>.json → Claude reads summary
+```
+
+A lightweight Python script (no Claude involved) runs before each report, calls the MCP API directly, filters/computes everything, and writes a compact JSON to disk. When you trigger the Claude report, its *first action* is `read_file` on that bundle instead of 5–8 MCP calls.
+
+### Estimated savings
+
+| Current approach | Pre-fetch approach |
+|---|---|
+| 5–8 MCP tool calls per report | 1 `read_file` call |
+| Raw payloads consumed in context | Pre-filtered compact JSON only |
+| ~3,000–8,000 tokens on data fetching | ~400–800 tokens on the bundle |
+| Hook signals computed reactively | Pre-computed and embedded in bundle |
+
+Rough token reduction: **60–80% per report**, mostly from eliminating raw option chain/candle consumption.
+
+---
+
+## Report-by-Report Data Bundle Design
+
+Each bundle should be a compact JSON with only what that specific report needs:
+
+### 🌅 Morning Brief (8am) — `tt_brief_morning.json`
+Pre-fetch at **7:45am**:
+- Account balances + growth phase signal (from `get_account_balances` hook)
+- All positions with unrealized P&L % (from `get_positions` + loss-monitor hook)
+- Live orders summary
+- Market metrics for all active underlyings: IV30, IVR, FF per expiry pair (from `get_market_metrics detail=full` + VRP hook)
+- OQuants email digest (Gmail search, subject line + key tickers extracted)
+- Overnight futures quote snapshot: /ES, /NQ, /CL
+- Macro calendar for the day (scraped once)
+
+### 📈 Post-Open Brief (9am) — `tt_brief_open.json`
+Pre-fetch at **8:50am**:
+- Delta-filtered quotes for all active positions (just bid/ask/last/delta)
+- Updated IV30 for positions with intraday vol moves >5%
+- Any filled orders since morning
+- VIX quote + regime snapshot (CALM/ELEVATED/STRESS label only)
+
+### 🌞 Noon Brief (12pm) — `tt_brief_noon.json`
+Pre-fetch at **11:50am**:
+- Position P&L snapshot (same as morning, refreshed)
+- Any new fills or order status changes
+- Intraday HV estimate for highest-vol positions
+- Forward Factor refresh for any calendar positions (BNO, USO)
+
+### 📉 Pre-Close Brief (2:30pm) — `tt_brief_preclose.json`
+Pre-fetch at **2:15pm**:
+- Full position snapshot with updated Greeks
+- Same-day expiry check (0DTE flag)
+- Circuit breaker P&L check (from `get_transactions` hook — daily/weekly limits)
+- Live order status
+- Closing vol estimate for key underlyings
+
+### 🌆 End of Day (5pm) — `tt_brief_eod.json`
+Pre-fetch at **4:45pm**:
+- Realized P&L for the day (from transactions hook)
+- Closed positions today
+- Updated unrealized P&L on all remaining positions
+- Growth plan tracker update (withdrawal eligibility, phase progress)
+- Market metrics refreshed for overnight watch
+
+### 🗓️ Weekend Prep (Sunday evening) — `tt_brief_weekend.json`
+Pre-fetch at **5pm Sunday**:
+- Full portfolio summary
+- Market metrics for all watchlist symbols
+- Earnings calendar for the coming week (scraped)
+- HV/IV computation for top candidates (candles + RV script)
+- Forward Factor scores across all tradeable calendar pairs
+- Weekly P&L summary
+
+---
+
+## Additional Optimizations Beyond Pre-Fetching
+
+### 1. Structured Report Prompts (System Prompt Level)
+Each report type gets a **dedicated system prompt** that already knows the bundle schema — so Claude doesn't spend tokens figuring out what it's looking at. The prompt is something like:
+> *"You are running the Morning Brief. A pre-fetched data bundle is at `/tmp/tt_brief_morning.json`. Its schema is: [...]  Your job is to analyze it and output the standard morning briefing format. Do not call any MCP tools unless the bundle is missing a field."*
+
+### 2. Progressive Staleness — Don't Re-fetch Everything Every Time
+Some data changes rarely:
+- **Static between reports:** account number, growth plan phase, position structure (not P&L)
+- **Changes once/day:** macro calendar, earnings dates, HV30 (daily bars)
+- **Changes frequently:** quotes, intraday IV, Greeks, P&L
+
+Bundle the slow stuff once in the morning, refresh only the fast stuff in each subsequent pre-fetch. This halves the pre-fetch API call count for afternoon reports.
+
+### 3. Delta Compression on Position Updates
+Instead of re-fetching the full position list each brief, fetch quotes only and merge with the cached position structure from the morning. A position doesn't change (quantity, strikes, expiry) — only its market value does.
+
+### 4. Pre-Computed Signals in the Bundle
+The hooks currently fire *inside* Claude's context after each MCP call. Move their computations into the pre-fetch script so the bundle already contains:
+- `hv20`, `hv30` — not raw candle arrays
+- `ff_score`, `ff_signal` — not raw term structure
+- `regime_label` — not raw market metrics
+- `loss_monitor_flags` — not raw positions
+
+Claude reads **conclusions**, not data.
+
+### 5. Cron Implementation
+On macOS (`launchd` or `crontab`):
+
+```bash
+# Crontab example
+45 7 * * 1-5   python3 ~/trading/prefetch.py --report morning
+50 8 * * 1-5   python3 ~/trading/prefetch.py --report open
+50 11 * * 1-5  python3 ~/trading/prefetch.py --report noon
+15 14 * * 1-5  python3 ~/trading/prefetch.py --report preclose
+45 16 * * 1-5  python3 ~/trading/prefetch.py --report eod
+0  17 * * 0    python3 ~/trading/prefetch.py --report weekend
+```
+
+The prefetch script calls the tastytrade MCP server directly (it's just an HTTP endpoint at `tastytrade-mcp.replit.app/mcp`), runs the hook computations inline, and writes the bundle.
+
+---
+
+## What This Buys You
+
+| Metric | Now | Optimized |
+|---|---|---|
+| Tokens per report | ~6,000–12,000 | ~1,500–3,000 |
+| MCP calls inside Claude | 5–10 | 0–2 |
+| Report generation time | 45–90 sec | 10–20 sec |
+| Context window pressure | High | Low |
+| Claude "thinking" % | ~30% (rest is data wrangling) | ~85% |
+
+---
+
+## Suggested Build Order
+
+1. **Start with the pre-fetch script** for the Morning Brief only — get the bundle schema right
+2. **Update your morning brief prompt** to consume the bundle instead of calling tools
+3. **Validate the output quality** is equivalent
+4. **Roll out to the remaining 5 reports** using the same pattern
+5. **Add cron scheduling** once all reports are validated
+
+Want me to build out the prefetch script and the bundle schema for a specific report to get started?
