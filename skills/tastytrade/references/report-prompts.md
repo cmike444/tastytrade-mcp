@@ -33,13 +33,14 @@ Read the file `/tmp/tt_brief_morning.json`. It contains the following top-level 
   hv30_pct, vrp (iv30 minus hv30), regime (CALM/ELEVATED/STRESS), earnings_date, dividend_next_date
 - `regime_summary`: dict mapping symbol → regime string
 - `futures_snapshot`: list of front-month futures contracts with product (/ES, /NQ, /CL, /GC, /SI),
-  front_symbol, expiration
+  front_symbol, expiration, last (last traded price), change (price change vs prior session),
+  change_pct (% change vs prior session); fields may be null if data is unavailable
 - `pnl`: daily_realized_pnl, weekly_realized_pnl, monthly_realized_pnl,
   daily_0dte_circuit_breaker (bool), weekly_circuit_breaker (bool)
 
 Generate the morning brief in this structure:
 1. **Account Status** — net liq, buying power, position count, any loss monitor flags
-2. **Overnight Futures** — direction and key levels from futures_snapshot
+2. **Overnight Futures** — for each contract in futures_snapshot show last price, change and change_pct; summarise overnight direction (risk-on/risk-off) and key levels; note "data unavailable" for any null fields
 3. **Volatility Regime** — classify overall market (CALM/ELEVATED/STRESS) based on regime_summary
 4. **Position Review** — table of all open positions with unrealized P&L; flag any breaches
 5. **Top Opportunities** — underlyings with ivr > 40 and vrp > 3 (IV selling candidates)
@@ -69,6 +70,8 @@ Read the file `/tmp/tt_brief_open.json`. It contains:
 - `loss_monitor`: breach_count, warning_count, breaches, warnings, circuit_breaker
 - `market_metrics`: refreshed iv30_pct, ivr, ivp, hv30_pct, vrp, regime, ff_score per underlying
 - `pnl`: today's realized P&L so far, daily_0dte_circuit_breaker, weekly_circuit_breaker
+- `futures_snapshot`: front-month futures for /ES, /NQ, /CL, /GC, /SI with last (last traded
+  price), change (price change vs prior session), change_pct (% change); fields may be null
 
 This bundle is delta-compressed against the morning snapshot — only close_price, unrealized_pnl,
 and delta are refreshed. Position structure (symbol/strikes/expiry/quantity) comes from the morning
@@ -78,10 +81,12 @@ Generate the open brief:
 1. **Opening Conditions** — net liq vs morning, any immediate loss monitor flags
 2. **Circuit Breaker Check** — if daily_0dte_circuit_breaker or weekly_circuit_breaker is true,
    lead with a ⛔ WARNING and recommend no new positions
-3. **Position Movers** — positions with unrealized_pnl change > $200 since open
-4. **Regime Check** — any regime changes vs morning (CALM→ELEVATED, etc.)
-5. **Open Orders** — status of any live orders
-6. **First-Hour Watchlist** — underlyings with ivr > 50 that could be traded today
+3. **Futures at Open** — for each entry in futures_snapshot show last price, change and change_pct;
+   characterise early direction (risk-on/risk-off); note "data unavailable" for null fields
+4. **Position Movers** — positions with unrealized_pnl change > $200 since open
+5. **Regime Check** — any regime changes vs morning (CALM→ELEVATED, etc.)
+6. **Open Orders** — status of any live orders
+7. **First-Hour Watchlist** — underlyings with ivr > 50 that could be traded today
 
 Do NOT call any MCP tools. Begin immediately.
 ```
@@ -215,7 +220,8 @@ Read the file `/tmp/tt_brief_weekend.json`. It contains:
   ivp, hv30_pct, vrp, regime, earnings_date, dividend_next_date
 - `top_candidates_by_ivr`: top 10 symbols by IVR (>40) — prime selling candidates
 - `pnl`: weekly_realized_pnl, monthly_realized_pnl, daily_0dte_circuit_breaker, weekly_circuit_breaker
-- `futures_snapshot`: front-month futures for /ES, /NQ, /CL, /GC, /SI
+- `futures_snapshot`: front-month futures for /ES, /NQ, /CL, /GC, /SI with last (last traded
+  price), change (price change vs prior session), change_pct (% change); fields may be null
 
 Generate the weekend review:
 1. **Week in Review** — weekly_realized_pnl, key wins/losses from positions

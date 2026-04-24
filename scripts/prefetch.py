@@ -503,36 +503,74 @@ def fetch_market_metrics(session: TastyTradeSession, symbols: list) -> list:
 def fetch_futures_quotes(session: TastyTradeSession) -> list:
     """
     Fetch front-month futures contracts with live quote data.
-    Uses the instruments endpoint to find front contract, then quotes endpoint for price.
+
+    Strategy:
+    1. Resolve front-month contract via /instruments/futures.
+    2. Try /market-data/quotes with the streamer-symbol (e.g. /ESM6:XCME) first,
+       then fall back to the regular symbol (e.g. /ESM6).
+    3. If the quotes endpoint returns no price data, fall back to instrument-level
+       fields: mark (last price) and settlement-price (prev close).
     """
+
+    def _f(v):
+        try:
+            return float(v) if v is not None else None
+        except (ValueError, TypeError):
+            return None
+
+    def _fetch_quote(symbol: str) -> dict:
+        """Call /market-data/quotes for a single symbol; return first item or {}."""
+        encoded = urllib.parse.quote(symbol, safe="")
+        raw = session.get(f"/market-data/quotes?symbols[]={encoded}")
+        items = raw.get("data", {}).get("items", []) or []
+        return items[0] if items else {}
+
     results = []
     for sym in FUTURES_WATCHLIST:
         product_code = sym.lstrip("/")
         raw = session.get(f"/instruments/futures?product-code={product_code}")
         futures = raw.get("data", {}).get("items", [])
         if not futures:
-            results.append({"product": sym, "front_symbol": None, "expiration": None,
-                            "last": None, "bid": None, "ask": None, "change": None, "change_pct": None})
+            results.append({
+                "product": sym, "front_symbol": None, "expiration": None,
+                "last": None, "bid": None, "ask": None, "change": None, "change_pct": None,
+            })
             continue
 
         front = futures[0]
         ticker = front.get("symbol", sym)
+        streamer_symbol = front.get("streamer-symbol") or front.get("streamerSymbol")
         expiration = front.get("expiration-date")
 
-        quote_raw = session.get(f"/market-data/quotes?symbols[]={urllib.parse.quote(ticker)}")
-        quotes_items = quote_raw.get("data", {}).get("items", []) or []
-        quote = quotes_items[0] if quotes_items else {}
+        quote: dict = {}
 
-        def _f(v):
-            try:
-                return float(v) if v is not None else None
-            except (ValueError, TypeError):
-                return None
+        if streamer_symbol:
+            quote = _fetch_quote(streamer_symbol)
+
+        if not quote.get("last") and not quote.get("lastPrice") and ticker != streamer_symbol:
+            fallback = _fetch_quote(ticker)
+            if fallback.get("last") or fallback.get("lastPrice"):
+                quote = fallback
 
         last = _f(quote.get("last") or quote.get("lastPrice"))
         bid = _f(quote.get("bid") or quote.get("bidPrice"))
         ask = _f(quote.get("ask") or quote.get("askPrice"))
-        prev_close = _f(quote.get("prevClose") or quote.get("prevDayClose") or front.get("mark"))
+        prev_close = _f(
+            quote.get("prevClose")
+            or quote.get("prevDayClose")
+            or quote.get("close")
+        )
+
+        if last is None:
+            last = _f(front.get("mark") or front.get("mark-price"))
+
+        if prev_close is None:
+            prev_close = _f(
+                front.get("settlement-price")
+                or front.get("prev-settlement-price")
+                or front.get("daily-close")
+            )
+
         change = round(last - prev_close, 4) if last is not None and prev_close is not None else None
         change_pct = round((last - prev_close) / prev_close * 100, 2) if last and prev_close else None
 
@@ -799,6 +837,11 @@ def fetch_intraday(session: TastyTradeSession, report_type: str, output_dir: str
     txns = fetch_transactions_recent(session, days=1)
     pnl_summary = compute_daily_pnl_from_transactions(txns)
 
+    futures_snapshot = None
+    if report_type == "open":
+        print("  Fetching futures quotes for open brief...")
+        futures_snapshot = fetch_futures_quotes(session)
+
     bundle = {
         "meta": {
             **build_metadata(report_type),
@@ -820,6 +863,9 @@ def fetch_intraday(session: TastyTradeSession, report_type: str, output_dir: str
         "market_metrics": metrics,
         "pnl": pnl_summary,
     }
+
+    if futures_snapshot is not None:
+        bundle["futures_snapshot"] = futures_snapshot
 
     if report_type == "preclose":
         today_str = date.today().isoformat()
