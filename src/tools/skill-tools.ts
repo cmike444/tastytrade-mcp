@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { readFileSync, existsSync } from "node:fs";
 import { getSkillContent, listSkillReferences, SKILLS } from "../resources/skill-resources.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
@@ -56,6 +57,49 @@ export function registerSkillTools(server: McpServer) {
         };
       }
       return { content: [{ type: "text" as const, text: content }] };
+    }
+  );
+
+  const REPORT_TYPES = ["morning", "open", "noon", "preclose", "eod", "weekend"] as const;
+
+  server.tool(
+    "read_daily_bundle",
+    [
+      "Read a pre-fetched daily report bundle from disk and return its contents.",
+      "Use this at the start of any daily report prompt (morning, open, noon, preclose, eod, weekend).",
+      "If the bundle file does not exist, returns an error with the exact shell command to generate it.",
+    ].join(" "),
+    {
+      report: z.enum(REPORT_TYPES).describe(
+        "Which report bundle to read. One of: morning, open, noon, preclose, eod, weekend."
+      ),
+    },
+    READ_ONLY,
+    async ({ report }) => {
+      const filePath = `/tmp/tt_brief_${report}.json`;
+      if (!existsSync(filePath)) {
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Bundle file not found: ${filePath}\n\nThe file does not exist. Generate it by running:\n\n  python3 scripts/prefetch.py --report ${report}\n\nThen retry this tool call.`,
+          }],
+          isError: true,
+        };
+      }
+      try {
+        const raw = readFileSync(filePath, "utf-8");
+        const parsed = JSON.parse(raw);
+        return { content: [{ type: "text" as const, text: JSON.stringify(parsed) }] };
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Failed to read or parse ${filePath}: ${message}\n\nTry regenerating the bundle:\n\n  python3 scripts/prefetch.py --report ${report}`,
+          }],
+          isError: true,
+        };
+      }
     }
   );
 }
