@@ -61,7 +61,7 @@ function projectGreeks(item: any, detail: DetailTier): any {
   return result;
 }
 
-const METRICS_SUMMARY_FIELDS = ["symbol", "iv-rank", "iv-percentile"];
+const METRICS_SUMMARY_FIELDS = ["symbol", "iv-rank", "iv-percentile", "implied-volatility-index-rank", "implied-volatility-percentile"];
 const METRICS_STANDARD_FIELDS = [
   "symbol", "iv-rank", "iv-percentile", "implied-volatility-index",
   "implied-volatility-index-5-day-change", "implied-volatility-30-day",
