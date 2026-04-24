@@ -34,7 +34,7 @@ import urllib.request
 
 TT_BASE = "https://api.tastytrade.com"
 SESSION_CACHE = "/tmp/tt_session_cache.json"
-FUTURES_WATCHLIST = ["/ES", "/NQ", "/CL", "/GC", "/SI"]
+FUTURES_WATCHLIST = ["/ES", "/NQ", "/CL", "/GC", "/SI", "/ZN", "/6E"]
 
 
 # ---------------------------------------------------------------------------

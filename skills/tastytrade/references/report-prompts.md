@@ -32,9 +32,10 @@ Read the file `/tmp/tt_brief_morning.json`. It contains the following top-level 
 - `market_metrics`: list per active underlying with symbol, iv30_pct, ivr (0–100), ivp (0–100),
   hv30_pct, vrp (iv30 minus hv30), regime (CALM/ELEVATED/STRESS), earnings_date, dividend_next_date
 - `regime_summary`: dict mapping symbol → regime string
-- `futures_snapshot`: list of front-month futures contracts with product (/ES, /NQ, /CL, /GC, /SI),
-  front_symbol, expiration, last (last traded price), change (price change vs prior session),
-  change_pct (% change vs prior session); fields may be null if data is unavailable
+- `futures_snapshot`: list of front-month futures contracts with product (/ES, /NQ, /CL, /GC, /SI,
+  /ZN 10-year T-note, /6E Euro FX), front_symbol, expiration, last (last traded price),
+  change (price change vs prior session), change_pct (% change vs prior session);
+  fields may be null if data is unavailable
 - `pnl`: daily_realized_pnl, weekly_realized_pnl, monthly_realized_pnl,
   daily_0dte_circuit_breaker (bool), weekly_circuit_breaker (bool)
 
@@ -70,8 +71,9 @@ Read the file `/tmp/tt_brief_open.json`. It contains:
 - `loss_monitor`: breach_count, warning_count, breaches, warnings, circuit_breaker
 - `market_metrics`: refreshed iv30_pct, ivr, ivp, hv30_pct, vrp, regime, ff_score per underlying
 - `pnl`: today's realized P&L so far, daily_0dte_circuit_breaker, weekly_circuit_breaker
-- `futures_snapshot`: front-month futures for /ES, /NQ, /CL, /GC, /SI with last (last traded
-  price), change (price change vs prior session), change_pct (% change); fields may be null
+- `futures_snapshot`: front-month futures for /ES, /NQ, /CL, /GC, /SI, /ZN (10-year T-note),
+  /6E (Euro FX) with last (last traded price), change (price change vs prior session),
+  change_pct (% change); fields may be null
 
 This bundle is delta-compressed against the morning snapshot — only close_price, unrealized_pnl,
 and delta are refreshed. Position structure (symbol/strikes/expiry/quantity) comes from the morning
@@ -220,8 +222,9 @@ Read the file `/tmp/tt_brief_weekend.json`. It contains:
   ivp, hv30_pct, vrp, regime, earnings_date, dividend_next_date
 - `top_candidates_by_ivr`: top 10 symbols by IVR (>40) — prime selling candidates
 - `pnl`: weekly_realized_pnl, monthly_realized_pnl, daily_0dte_circuit_breaker, weekly_circuit_breaker
-- `futures_snapshot`: front-month futures for /ES, /NQ, /CL, /GC, /SI with last (last traded
-  price), change (price change vs prior session), change_pct (% change); fields may be null
+- `futures_snapshot`: front-month futures for /ES, /NQ, /CL, /GC, /SI, /ZN (10-year T-note),
+  /6E (Euro FX) with last (last traded price), change (price change vs prior session),
+  change_pct (% change); fields may be null
 
 Generate the weekend review:
 1. **Week in Review** — weekly_realized_pnl, key wins/losses from positions
@@ -281,6 +284,7 @@ All bundles share these common fields:
 | `pnl.daily_0dte_circuit_breaker` | bool | true if daily P&L < -$250 |
 | `pnl.weekly_circuit_breaker` | bool | true if weekly P&L < -$1,500 |
 | `loss_monitor.circuit_breaker` | bool | true if any position lost >5% of net liq |
+| `futures_snapshot[].product` | string | root product code: /ES, /NQ, /CL, /GC, /SI, /ZN, /6E |
 | `futures_snapshot[].last` | float\|null | last traded price for front contract |
 | `futures_snapshot[].change` | float\|null | price change vs prior session |
 | `futures_snapshot[].change_pct` | float\|null | % change vs prior session |
