@@ -198,11 +198,12 @@ When used alongside the `trading-strategies` skill:
 
 These **PreToolUse** hooks fire before `create_order` / `create_complex_order` and block submission when a rule is violated. They cannot be bypassed by skipping a step — the hook fires at the API call level.
 
-| Hook | Fires before | Blocks when |
-|---|---|---|
-| `tt-require-bracket.py` | `create_order`, `create_complex_order` | Any `Sell to Open` option leg lacks an OTOCO bracket with a profit-target child (LIMIT at 50% of credit) and a stop-loss child (STOP at 2× credit) |
-| `tt-concentration-cap.py` | `create_complex_order` | Adding the new order would push any single underlying above 25% of net liq (reads `/tmp/tt_netliq.json`; existing exposure from `/tmp/tt_positions.json`) |
-| `tt-require-plan.py` | `create_order`, `create_complex_order` | `/tmp/tt_pending_plan.json` is missing, older than 60 minutes, or incomplete (requires: `thesis`, `profit_target`, `stop_loss`, `time_stop`, `invalidation`) |
+| Hook | Exit | Fires before | Blocks / warns when |
+|---|---|---|---|
+| `tt-require-bracket.py` | Block (2) | `create_order`, `create_complex_order` | Any `Sell to Open` option leg lacks an OTOCO bracket. Validates bracket prices by structure: strangle/iron condor → 50% profit / 2× stop; straddle/iron butterfly → 25–35% profit / 1.5× stop; 0DTE → OTOCO required, prices not validated |
+| `tt-concentration-cap.py` | Block (2) | `create_complex_order` | Adding the new order would push any single underlying above 25% of net liq (reads `/tmp/tt_netliq.json`; existing exposure from `/tmp/tt_positions.json`) |
+| `tt-require-plan.py` | Block (2) | `create_order`, `create_complex_order` | `/tmp/tt_pending_plan.json` is missing, older than 60 minutes, or incomplete (requires: `thesis`, `profit_target`, `stop_loss`, `time_stop`, `invalidation`) |
+| `tt-require-dte.py` | Warn (1) | `create_order`, `create_complex_order` | Any `Sell to Open` option leg is at or inside 21 DTE at entry (warning only — does not block; 0DTE entries are exempt) |
 
 **Before placing any order:**
 1. Write a trade plan to `/tmp/tt_pending_plan.json` with all five fields
@@ -210,5 +211,12 @@ These **PreToolUse** hooks fire before `create_order` / `create_complex_order` a
 3. Wrap every naked short-premium open in an OTOCO order with profit and stop child orders
 
 **Nakedness definition** (`tt-require-bracket.py`): A STO option leg is naked when BTO contracts on the same underlying are fewer than STO contracts (quantity parity). 1:1 spreads are defined-risk and do not require a bracket. Ratio spreads (2:1) require a bracket for the unhedged leg. When per-leg prices are provided, a near-zero BTO debit (< 5% of STO credit) is also treated as naked regardless of quantity.
+
+**Bracket prices are strategy-specific:**
+- **Strangle / Iron Condor** (different STO strikes): LIMIT at 50% of credit, STOP at 2× credit
+- **Straddle / Iron Butterfly** (same STO strike): LIMIT at 25–35% of credit (hook targets 30%), STOP at 1.5× credit
+- **0DTE orders** (expires today): OTOCO required; bracket prices are not validated (time-based close)
+
+All prices are compared as absolute values — closing orders carry negative prices in TastyTrade JSON.
 
 **Concentration approximation** (`tt-concentration-cap.py`): New-order exposure is estimated as `|net_price| × max_opening_leg_quantity × multiplier` per underlying. This is a conservative over-estimate for multi-leg spreads where the net credit is small relative to notional; it may flag a roll or adjustment order at the boundary. If blocked, review actual position sizes with `get_positions` before closing legs.

@@ -102,10 +102,11 @@ Every entry uses a bracket:
 2. **Stop loss** — calculated via short-leg formula above
 
 ### Time-Based Hard Exit
-Close or expire all 0DTE positions **15–30 minutes before market close**. Avoids:
-- Strike pinning risk
-- After-hours assignment / volatility
-- Liquidity gaps in the final minutes
+0DTE positions have a **fixed intraday window**. Close all positions approximately **2 hours after entry** regardless of P&L (e.g., enter at 9:30 am → close by 11:30 am). Do not hold into the afternoon session. This is a hard rule, not a target.
+
+Rationale: 0DTE gamma accelerates sharply after midday; holding through the afternoon exposes the position to pinning and liquidity deterioration. The bracket order should use a DAY time-in-force so any unfilled legs auto-cancel at session end, but the agent must place the closing order actively at the 2-hour mark — do not rely solely on the bracket expiring.
+
+If a position is already at full profit before the 2-hour window, close early. Never extend the window hoping for additional credit decay.
 
 ---
 

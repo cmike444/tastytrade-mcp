@@ -19,6 +19,18 @@ Every trade that opens a **net short premium position** must be placed as an OTO
 - Supply and Demand Zones: credit call spread, credit put spread at zones
 - 0DTE VRP: iron condor (MECH and EMA setups)
 
+**Bracket levels differ by structure:**
+
+| Structure | Profit target | Stop loss | Detection |
+|---|---|---|---|
+| Short strangle | 50% of credit | 2× credit | STO call and put at different strikes |
+| Iron condor | 50% of credit | 2× credit | STO at different strikes + BTO wings |
+| Short straddle | 25–35% of credit | 1.5× credit | STO call and put at the same strike |
+| Iron butterfly | 25–35% of credit | 1.5× credit | STO at same strike + BTO wings |
+| 0DTE iron condor | OTOCO required | Time-based close (~2 h after entry) | Expiry = today |
+
+Close prices are **negative** in the order JSON (you pay a debit to buy back a short). Example: sold strangle for $5.50 credit → profit target LIMIT price = −$2.75 (50%); stop LIMIT price = −$11.00 (2×).
+
 **Exempted from this rule** (debit structures — no bracket required):
 - Forward Factor: long calendar spread (debit; no OTOCO — hold to front-expiry day instead)
 - Pre-Earnings Expansion: long ATM straddle (debit with 50%-of-debit stop managed as a GTC limit)
@@ -414,7 +426,7 @@ Use these templates as the starting point for each strategy's typical entry orde
 
 ---
 
-### VRP — Short Straddle OTOCO (50% profit / 2× credit stop)
+### VRP — Short Straddle OTOCO (30% profit / 1.5× credit stop)
 ```json
 {
   "type": "OTOCO",
@@ -431,7 +443,7 @@ Use these templates as the starting point for each strategy's typical entry orde
     {
       "time-in-force": "GTC",
       "order-type": "Limit",
-      "price": -4.00,
+      "price": -5.60,
       "legs": [
         {"instrument-type": "Equity Option", "symbol": "SPY 240119C00455000", "action": "Buy to Close", "quantity": 1},
         {"instrument-type": "Equity Option", "symbol": "SPY 240119P00455000", "action": "Buy to Close", "quantity": 1}
@@ -440,7 +452,7 @@ Use these templates as the starting point for each strategy's typical entry orde
     {
       "time-in-force": "GTC",
       "order-type": "Limit",
-      "price": -16.00,
+      "price": -12.00,
       "legs": [
         {"instrument-type": "Equity Option", "symbol": "SPY 240119C00455000", "action": "Buy to Close", "quantity": 1},
         {"instrument-type": "Equity Option", "symbol": "SPY 240119P00455000", "action": "Buy to Close", "quantity": 1}
@@ -449,6 +461,7 @@ Use these templates as the starting point for each strategy's typical entry orde
   ]
 }
 ```
+*Straddles and iron butterflies: profit target = 25–35% of credit (example uses 30%: price = −credit × 0.70 to retain 30%). Stop = 1.5× credit (price = −credit × 1.50). ATM structures move faster than strangles — the tighter target locks in edge before mean reversion reverses.*
 
 ---
 
@@ -512,13 +525,13 @@ Use these templates as the starting point for each strategy's typical entry orde
 
 ---
 
-### Earnings Crush — Short Straddle OTOCO (50% profit / 2× credit stop)
+### Earnings Crush — Short Straddle OTOCO (25–35% profit / 1.5× credit stop)
 
-Same structure as VRP Short Straddle OTOCO above. Use next-day expiry for earnings plays.
+Same structure as VRP Short Straddle OTOCO above. Use next-day expiry for earnings plays. Profit target = 25–35% of credit (e.g., sell $8 straddle → profit LIMIT at −$5.60 to retain 30%); stop = 1.5× credit (e.g., −$12.00).
 
 ---
 
-### Earnings Crush — Iron Butterfly OTOCO (50% profit / 2× credit stop)
+### Earnings Crush — Iron Butterfly OTOCO (25–35% profit / 1.5× credit stop)
 ```json
 {
   "type": "OTOCO",
@@ -537,7 +550,7 @@ Same structure as VRP Short Straddle OTOCO above. Use next-day expiry for earnin
     {
       "time-in-force": "GTC",
       "order-type": "Limit",
-      "price": -3.00,
+      "price": -4.20,
       "legs": [
         {"instrument-type": "Equity Option", "symbol": "AAPL 240119C00195000", "action": "Sell to Close", "quantity": 1},
         {"instrument-type": "Equity Option", "symbol": "AAPL 240119C00185000", "action": "Buy to Close", "quantity": 1},
@@ -548,7 +561,7 @@ Same structure as VRP Short Straddle OTOCO above. Use next-day expiry for earnin
     {
       "time-in-force": "GTC",
       "order-type": "Limit",
-      "price": -12.00,
+      "price": -9.00,
       "legs": [
         {"instrument-type": "Equity Option", "symbol": "AAPL 240119C00195000", "action": "Sell to Close", "quantity": 1},
         {"instrument-type": "Equity Option", "symbol": "AAPL 240119C00185000", "action": "Buy to Close", "quantity": 1},
@@ -559,6 +572,7 @@ Same structure as VRP Short Straddle OTOCO above. Use next-day expiry for earnin
   ]
 }
 ```
+*Iron butterfly (ATM structure): profit target at 30% of $6.00 credit = −$4.20 (retain $1.80). Stop at 1.5× credit = −$9.00. Iron butterflies and straddles use tighter targets than strangles/condors because ATM structures move faster.*
 
 ---
 

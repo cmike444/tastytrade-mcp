@@ -17,7 +17,15 @@ IV systematically overstates future realized vol. Option sellers take on convexi
 
 These rules are non-negotiable. No exceptions regardless of signal quality, account size, or conviction.
 
-1. **OTOCO at entry — always.** Every short-premium VRP entry (short strangle, short straddle, iron condor) must be placed as an OTOCO order with simultaneous GTC brackets: profit target at **50% of credit collected**, stop loss at **2× credit collected**. Manual bracket placement after fill is not acceptable — the brackets must be live the moment the position opens.
+1. **OTOCO at entry — always.** Every short-premium VRP entry must be placed as an OTOCO order with simultaneous GTC brackets. Bracket levels differ by structure:
+
+   | Structure | Profit target | Stop loss |
+   |---|---|---|
+   | Short strangle | 50% of credit | 2× credit |
+   | Iron condor | 50% of credit | 2× credit |
+   | Short straddle | 25–35% of credit | 1.5× credit |
+
+   Manual bracket placement after fill is not acceptable — the brackets must be live the moment the position opens. Straddles use a tighter profit target because the ATM structure moves faster; the 1.5× stop allows room for mean reversion while maintaining positive expectancy.
 
 2. **Mechanical 21-DTE time stop.** Close (or roll) any VRP position by 21 DTE regardless of P&L. Do not hold into gamma territory hoping for a better exit. The 21-DTE close is unconditional — it is not a guideline or a default, it is the rule. Rolling is only permitted if VRP signals re-qualify the new expiry at entry.
 
@@ -114,9 +122,9 @@ VRP is tradable across multiple asset classes — apply the same signal framewor
 - Term structure sharply inverts to backwardation → reduce or exit
 - ~7 DTE: close or roll to next cycle (extreme gamma risk near expiry)
 - Day-zero test: "Would I put this on today?" — if no, exit regardless of P&L
-- **Take profit at 50% of credit collected**
-- **Time-based exit: close at ~½ of entry DTE** (e.g., entered at 45 DTE → exit at 21 DTE)
-- **Stop loss at 2× credit collected**
+- **Take profit:** 50% of credit for strangles and iron condors; 25–35% of credit for straddles
+- **Time-based exit: close at 21 DTE** regardless of P&L (the 21-DTE time stop is unconditional)
+- **Stop loss:** 2× credit for strangles and iron condors; 1.5× credit for straddles
 - Condition-based exits (IV spike, term structure inversion) override profit/stop targets
 
 **RV vs. IV Monitoring**

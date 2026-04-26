@@ -33,13 +33,15 @@ Use an earnings calendar on any platform or broker to identify stocks announcing
 
 **Iron Butterfly** (defined-risk alternative to the short straddle): sell ATM call + put, buy OTM wings equidistant. Defined max loss = wing width minus credit received. Higher win probability than the short straddle; lower max return. Choose this structure over the straddle when you want a hard cap on losses for the specific setup.
 - Sizing: 2–4% per trade (margin = wing width minus credit)
-- Stop: 2× credit collected; OTOCO bracket required at entry
-- Entry: must be placed as OTOCO (trigger = iron butterfly at credit; bracket = 50% profit target + 2× credit stop)
+- Stop: 1.5× credit; OTOCO bracket required at entry
+- Entry: must be placed as OTOCO (trigger = iron butterfly at credit; bracket = 25–35% profit target + 1.5× credit stop)
 
 **Short Straddle**: sell ATM call + put, same expiry. Higher raw returns, lower commissions. Fat left tail risk (1% of trades: 130%+ losses). No predefined max loss.
 - Sizing: 30% Kelly = ~2% per trade
-- Stop: 2× credit received — unconditional; OTOCO bracket required at entry
-- Entry: must be placed as OTOCO (trigger = straddle at credit; bracket = 50% profit target + 2× credit stop)
+- Stop: 1.5× credit received — unconditional; OTOCO bracket required at entry
+- Entry: must be placed as OTOCO (trigger = straddle at credit; bracket = 25–35% profit target + 1.5× credit stop)
+
+Note: ATM structures (straddles and iron butterflies) use a tighter profit target (25–35% of credit) than strangles/condors (50%) because the ATM position moves faster. The 1.5× stop replaces the 2× stop to allow room for mean reversion while still capping losses at a level consistent with positive expectancy.
 
 **Choosing between structures — trade-by-trade comparison:**
 Evaluate each specific setup on three factors:
