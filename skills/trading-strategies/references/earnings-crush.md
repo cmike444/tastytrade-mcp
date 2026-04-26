@@ -24,11 +24,30 @@ Use an earnings calendar on any platform or broker to identify stocks announcing
 - For most retail traders: stocks under $100–$150
 - Higher-priced stocks have proportionally larger margin requirements and dollar risk per contract
 
-## Two Structures
+## Three Structures
 
-**Short Straddle**: sell ATM call + put, same expiry. Higher returns, lower commissions. Fat left tail risk (1% of trades: 130%+ losses). Use only if you can absorb tail risk.
+**Long Calendar**: sell front-month ATM, buy back-month ATM (~30-day gap). Max loss = debit paid. 28% std dev vs 48% for straddle. Strong defined-risk profile; preferred when the back-month leg offers good relative value.
+- Sizing: 10% Kelly = ~6% per trade
+- Stop: if front month expires worthless with stock unmoved, close the entire spread — do not sell a new front to recreate the calendar
+- Entry: debit limit order; GTC close order set for front-expiry day
 
-**Long Calendar (preferred)**: sell front-month ATM, buy back-month ATM (~30-day gap). Max loss = debit paid. 28% std dev vs 48% for straddle. Preferred for sustainability.
+**Iron Butterfly** (defined-risk alternative to the short straddle): sell ATM call + put, buy OTM wings equidistant. Defined max loss = wing width minus credit received. Higher win probability than the short straddle; lower max return. Choose this structure over the straddle when you want a hard cap on losses for the specific setup.
+- Sizing: 2–4% per trade (margin = wing width minus credit)
+- Stop: 2× credit collected; OTOCO bracket required at entry
+- Entry: must be placed as OTOCO (trigger = iron butterfly at credit; bracket = 50% profit target + 2× credit stop)
+
+**Short Straddle**: sell ATM call + put, same expiry. Higher raw returns, lower commissions. Fat left tail risk (1% of trades: 130%+ losses). No predefined max loss.
+- Sizing: 30% Kelly = ~2% per trade
+- Stop: 2× credit received — unconditional; OTOCO bracket required at entry
+- Entry: must be placed as OTOCO (trigger = straddle at credit; bracket = 50% profit target + 2× credit stop)
+
+**Choosing between structures — trade-by-trade comparison:**
+Evaluate each specific setup on three factors:
+1. **Credit received** — short straddle collects more than iron butterfly; compare whether the extra credit justifies the open-ended tail risk for this name and IV environment
+2. **Defined risk** — iron butterfly caps the max loss to the wing width; prefer it when the name has event risk beyond the earnings announcement or the current implied move is large relative to your account
+3. **Bid-ask and liquidity** — iron butterfly has four legs; compare total fill cost (spread × legs) against the extra defined-risk benefit; if liquidity is thin, the straddle or calendar may be more practical
+
+No account-size threshold dictates the choice. Select the structure that offers the best combination of edge, risk definition, and execution quality for that specific trade.
 
 ## Three Signals (all must pass for "Recommended")
 
@@ -106,9 +125,12 @@ Close your entire position the morning after earnings are announced. Do not hold
 - The edge plays out over many trades at scale — position sizing and psychological fortitude to hold the plan through bad runs are prerequisites
 
 ## Sizing
-- Calendar: 10% Kelly = ~6% per trade
-- Straddle: 30% Kelly = ~2% per trade
-- Monte Carlo (calendar, 10% Kelly, 10yr): mean $6M from $10k, 90% CAGR, 3.5 Sharpe
+
+- **Calendar**: 10% Kelly = ~6% per trade; Monte Carlo (10% Kelly, 10yr): mean $6M from $10k, 90% CAGR, 3.5 Sharpe
+- **Iron Butterfly**: 2–4% per trade (margin-based)
+- **Straddle**: 30% Kelly = ~2% per trade
+
+See structure descriptions above for the trade-by-trade comparison framework.
 
 ## Real Example: Amazon
 All 3 signals met → Feb 7/Mar 7 call calendar, $3.33 debit → stock moved 2.5% (below implied) → $9,300 profit on 100 contracts

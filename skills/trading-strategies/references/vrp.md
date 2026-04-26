@@ -13,6 +13,16 @@ IV systematically overstates future realized vol. Option sellers take on convexi
 - **Speculation demand** — OTM calls bought as "lottery tickets" bid up call-side IV
 - **Structural supply/demand imbalance** — net demand from hedgers/speculators exceeds supply from sophisticated sellers who require risk premium
 
+## Hard Rules
+
+These rules are non-negotiable. No exceptions regardless of signal quality, account size, or conviction.
+
+1. **OTOCO at entry — always.** Every short-premium VRP entry (short strangle, short straddle, iron condor) must be placed as an OTOCO order with simultaneous GTC brackets: profit target at **50% of credit collected**, stop loss at **2× credit collected**. Manual bracket placement after fill is not acceptable — the brackets must be live the moment the position opens.
+
+2. **Mechanical 21-DTE time stop.** Close (or roll) any VRP position by 21 DTE regardless of P&L. Do not hold into gamma territory hoping for a better exit. The 21-DTE close is unconditional — it is not a guideline or a default, it is the rule. Rolling is only permitted if VRP signals re-qualify the new expiry at entry.
+
+3. **25%-of-net-liq single-name concentration cap.** No single underlying may represent more than 25% of net liquidating value in VRP exposure (measured by margin at risk, not premium received). This applies per ticker across all VRP structures combined. Diversify across at least 3–5 uncorrelated names.
+
 ## Signals (in order of importance)
 
 **1. IV/RV Ratio (log-transformed)**

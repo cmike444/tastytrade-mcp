@@ -52,7 +52,14 @@ Term-structure FF is computed from aggregate/ATM IVs across expiries. At any ind
 - FF ≥ 0.30 with `← CALENDAR SIGNAL` label → proceed to Stage 2
 - FF < 0.30 → skip this name
 
-### Stage 2 — Strike-level FF scan (actual trade decision)
+### Stage 2 — Strike-level FF scan (actual trade decision) — HARD GATE
+
+**Stage 2 is mandatory. Entry is blocked if Stage 2 is skipped for any reason.**
+
+- If `get_options_greeks` is unavailable (tool error, data gap, market closed) → **skip the trade entirely**. Do not substitute ATM as a default. Do not estimate. The data must exist before a calendar spread is placed.
+- Same-underlying layered diagonals are forbidden. Opening a second calendar on the same underlying while the first is still open is not permitted — this includes re-centering via a new calendar leg. Close the existing position before opening a replacement, or accept the drift.
+
+Procedure:
 1. Call `get_options_greeks` for **both expiries** across a range of strikes: ATM, ATM+0.5, ATM+1.0, ATM+1.5 (calls); ATM-0.5, ATM-1.0 (puts)
 2. For each strike compute: `FF_strike = (IV_front_strike − IV_back_strike) / IV_back_strike`
 3. **Enter at the strike with the largest positive FF_strike** — not necessarily ATM

@@ -47,6 +47,34 @@ When a user asks for help:
 
 ---
 
+## Portfolio Construction
+
+These rules govern how the seven strategies are combined and scaled. They are not aspirational targets — they are operating constraints.
+
+**Strategy diversification target:** Run at least **3 concurrent strategies** at all times when capital allows. A portfolio of fewer than 3 active strategies increases correlation exposure and reduces the law-of-large-numbers benefit that underpins each strategy's edge. Use the seven strategies to fill uncorrelated exposure across vol, directional, calendar, and zone plays.
+
+**Pre-trade written plan — required for every position.** Before placing any trade, record:
+1. **Thesis** — why the edge exists for this specific setup right now
+2. **Profit target** — the exact P&L level or % of credit at which you close
+3. **Stop** — the exact loss level or % of credit at which you close unconditionally
+4. **Time stop** — the DTE or calendar date at which you close regardless of P&L
+5. **Invalidation** — what market condition (vol spike, regime change, news) voids the thesis and requires an immediate exit
+
+If any of these five items cannot be answered before the trade is placed, the trade is not placed.
+
+**Tiered acceleration sequence:** Account growth follows a fixed order of operations. Do not skip tiers or run them simultaneously.
+
+| Tier | Focus | Action |
+|---|---|---|
+| 1 — Process discipline | Execute every rule on every trade | Achieve zero Tier 1 violations for a rolling 30-day window before advancing |
+| 2 — Strategy diversification | Add strategies from the seven until ≥3 are running concurrently | Achieve target diversification before advancing |
+| 3 — Capital injection | Add external capital to the account | Only after Tier 1 and Tier 2 are sustained |
+| 4 — Sizing increases | Increase Kelly fraction or per-trade allocation | Only after Tier 1–3 are sustained |
+
+See `references/account-acceleration.md` for the full framework, tier definitions, and escalation criteria.
+
+---
+
 ## The Seven Strategies
 
 | Strategy | File | When to use |

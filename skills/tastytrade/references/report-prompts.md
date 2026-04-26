@@ -198,6 +198,14 @@ Generate the end-of-day report:
 4. **Lessons & Observations** — what worked, what to watch overnight
 5. **Tomorrow's Watchlist** — underlyings with ivr > 40 worth monitoring at open
 6. **Weekly Outlook** (if Friday) — summarize the week; preview next week setup
+7. **Acceleration Check** — compare current net_liq trajectory to the growth plan milestones.
+   State whether net liq is on pace, ahead, or behind the current phase target. Then enumerate
+   any Tier 1 process violations from today's session: (a) entries placed without an OTOCO bracket
+   where one was required, (b) positions held past the 21-DTE time stop, (c) single-name VRP
+   concentration exceeding 25% of net liq, (d) trades entered without a pre-trade written plan.
+   If zero violations: confirm "No Tier 1 violations this session." If violations exist: list
+   each one explicitly — do not summarize or omit. Tier 1 discipline must be clean for 30 rolling
+   days before advancing to Tier 2 (strategy diversification).
 
 Do not make any further MCP tool calls after loading the bundle. Begin immediately.
 ```
