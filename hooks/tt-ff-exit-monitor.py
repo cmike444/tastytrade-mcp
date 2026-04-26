@@ -70,7 +70,15 @@ def parse_occ_symbol(symbol):
     parts = prefix.split()
     if not parts:
         return None
-    underlying = parts[0].lstrip("./").upper()
+    raw_underlying = parts[0]
+    is_future = raw_underlying.startswith("./")
+    underlying = raw_underlying.lstrip("./").upper()
+    # For futures underlyings (e.g. "./ESM6", "./ESU6") strip the trailing
+    # contract-month suffix (one CME month letter + 1–2 digit year) so that
+    # legs on different contract months (ESM6 vs ESU6) share the same root
+    # (ES) and are correctly grouped as a calendar pair.
+    if is_future:
+        underlying = re.sub(r"[FGHJKMNQUVXZ]\d{1,2}$", "", underlying)
     return underlying, expiry, opt_type, strike_raw
 
 

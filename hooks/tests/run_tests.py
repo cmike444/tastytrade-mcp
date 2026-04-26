@@ -1026,6 +1026,41 @@ def make_tests():
         ),
 
         # ------------------------------------------------------------------
+        # tt-ff-exit-monitor — cross-contract futures calendar (/ESM6 / /ESU6)
+        # The bug: without stripping the CME suffix, ESM6 ≠ ESU6 so the two
+        # legs are never grouped into a calendar pair and the monitor is silent.
+        # After the fix, both legs reduce to root "ES" and the contango term
+        # structure (Jun20 IV=16% < Sep19 IV=20%) yields FF < 0 → WARN.
+        # ------------------------------------------------------------------
+        Test(
+            name="ff_exit_monitor / cross-contract /ESM6//ESU6 calendar FF < 0 → WARN in stdout",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-ff-exit-monitor",
+            expected_exit=0,
+            setup=lambda: write_positions(
+                _futures_calendar_positions(
+                    front_date=_date(2026, 6, 20),
+                    back_date=_date(2026, 9, 19),
+                    front_underlying="./ESM6",
+                    back_underlying="./ESU6",
+                    option_root_front="EW1M6",
+                    option_root_back="EW1U6",
+                    opt_type="C",
+                    strike="4800",
+                )
+            ),
+            teardown=remove_positions,
+            stdout_contains="Forward Factor edge is gone on ES",
+            note=(
+                "Cross-contract /ES calendar: short ./ESM6 Jun20, long ./ESU6 Sep19. "
+                "Without stripping the CME contract-month suffix (M6/U6), the two legs "
+                "would never match as a calendar pair. With the fix, both reduce to root "
+                "'ES', the contango term structure (Jun20 IV=16% < Sep19 IV=20%) gives "
+                "FF < 0, and the exit warning must be emitted."
+            ),
+        ),
+
+        # ------------------------------------------------------------------
         # tt-calendar-expiry-alert — PostToolUse on get_positions or
         # get_market_metrics(detail="full")
         # ------------------------------------------------------------------
