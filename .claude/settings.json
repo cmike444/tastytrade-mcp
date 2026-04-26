@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "create_order|create_complex_order",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/tt-require-dry-run.sh"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/tt-require-plan.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/tt-require-bracket.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/tt-concentration-cap.py"
+          }
+        ]
+      }
+    ]
+  }
+}
