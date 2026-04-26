@@ -108,6 +108,47 @@ def _calendar_positions(front_date, back_date,
     ]
 
 
+def _futures_calendar_positions(front_date, back_date,
+                                front_underlying="./ESM6", back_underlying=None,
+                                option_root_front="EW1M6", option_root_back=None,
+                                opt_type="C", strike="4800"):
+    """
+    Return a two-leg positions list for a futures-option calendar spread.
+
+    Symbols follow the TastyTrade futures-option format:
+        ./UNDERLYING OPTION_ROOT YYMMDDCP STRIKE
+
+    When back_underlying differs from front_underlying (cross-contract calendar),
+    parse_occ_symbol must strip the contract-month suffix to match the two legs.
+    """
+    if back_underlying is None:
+        back_underlying = front_underlying
+    if option_root_back is None:
+        option_root_back = option_root_front
+    return [
+        {
+            "symbol": "{} {} {}{}{}".format(
+                front_underlying, option_root_front,
+                _occ_date(front_date), opt_type, strike,
+            ),
+            "instrument-type": "Future Option",
+            "quantity": 1,
+            "quantity-direction": "Short",
+            "underlying-symbol": front_underlying,
+        },
+        {
+            "symbol": "{} {} {}{}{}".format(
+                back_underlying, option_root_back,
+                _occ_date(back_date), opt_type, strike,
+            ),
+            "instrument-type": "Future Option",
+            "quantity": 1,
+            "quantity-direction": "Long",
+            "underlying-symbol": back_underlying,
+        },
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Hook runner
 # ---------------------------------------------------------------------------
@@ -735,6 +776,80 @@ def make_tests():
             note=(
                 "Hook also fires on get_market_metrics(detail='full'); with front leg "
                 "expiring today it must emit the warning regardless of the tool used."
+            ),
+        ),
+
+        # ------------------------------------------------------------------
+        # tt-calendar-expiry-alert — futures-option calendar spreads
+        # Same-contract: both legs on ./ESM6 (no root-stripping needed).
+        # Cross-contract: short on ./ESM6 / long on ./ESU6 — root must be
+        # stripped (ESM6 → ES, ESU6 → ES) for the pair to be detected.
+        # ------------------------------------------------------------------
+        Test(
+            name="calendar_expiry_alert / futures-option same-contract front expires today → WARN",
+            fixture="futures_option_calendar.json",
+            hook="tt-calendar-expiry-alert",
+            expected_exit=0,
+            setup=lambda: write_positions(
+                _futures_calendar_positions(
+                    front_date=_date.today(),
+                    back_date=_date.today() + timedelta(days=30),
+                    front_underlying="./ESM6",
+                    back_underlying="./ESM6",
+                    option_root_front="EW1M6",
+                    option_root_back="EW2M6",
+                )
+            ),
+            teardown=remove_positions,
+            stdout_contains="close the spread before market close",
+            note=(
+                "Both /ES legs on same contract (./ESM6); front expires today. "
+                "instrument-type='Future Option' must be recognised; warning must fire."
+            ),
+        ),
+        Test(
+            name="calendar_expiry_alert / futures-option cross-contract front expires today → WARN",
+            fixture="futures_option_calendar.json",
+            hook="tt-calendar-expiry-alert",
+            expected_exit=0,
+            setup=lambda: write_positions(
+                _futures_calendar_positions(
+                    front_date=_date.today(),
+                    back_date=_date.today() + timedelta(days=90),
+                    front_underlying="./ESM6",
+                    back_underlying="./ESU6",
+                    option_root_front="EW1M6",
+                    option_root_back="EW3U6",
+                )
+            ),
+            teardown=remove_positions,
+            stdout_contains="close the spread before market close",
+            note=(
+                "Cross-contract /ES calendar: short ./ESM6, long ./ESU6. "
+                "parse_occ_symbol must strip the contract-month suffix (ESM6→ES, ESU6→ES) "
+                "to group the legs as a calendar pair. Front expires today → WARN."
+            ),
+        ),
+        Test(
+            name="calendar_expiry_alert / futures-option cross-contract front 5 DTE → silent",
+            fixture="futures_option_calendar.json",
+            hook="tt-calendar-expiry-alert",
+            expected_exit=0,
+            setup=lambda: write_positions(
+                _futures_calendar_positions(
+                    front_date=_date.today() + timedelta(days=5),
+                    back_date=_date.today() + timedelta(days=95),
+                    front_underlying="./ESM6",
+                    back_underlying="./ESU6",
+                    option_root_front="EW1M6",
+                    option_root_back="EW3U6",
+                )
+            ),
+            teardown=remove_positions,
+            stdout_absent="close the spread before market close",
+            note=(
+                "Cross-contract /ES calendar with front leg 5 DTE (>1) → no alert; "
+                "only ≤1 DTE triggers the warning."
             ),
         ),
     ]

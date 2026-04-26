@@ -1,0 +1,11 @@
+{
+  "_comment": "PostToolUse fixture for tt-calendar-expiry-alert exercising futures-option calendar spreads. The hook reads /tmp/tt_positions.json (written by the test runner), not the tool response itself. Positions simulate a ./ES futures-option calendar: short near-term leg on one contract month, long far-term leg on a different contract month (e.g. ./ESM6 front / ./ESU6 back). Tests: (1) same-contract calendar front expires today → WARN; (2) cross-contract calendar front expires today → WARN (requires root stripping of ESM6→ES and ESU6→ES); (3) cross-contract front 5 DTE → silent.",
+  "tool_name": "get_positions",
+  "tool_input": {},
+  "tool_response": [
+    {
+      "type": "text",
+      "text": "{\"data\": {\"items\": []}}"
+    }
+  ]
+}
