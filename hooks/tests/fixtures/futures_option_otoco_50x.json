@@ -1,0 +1,72 @@
+{
+  "_comment": "Scenario: /ES futures-option short strangle OTOCO with explicit multiplier=50. Price=$25.00, qty=2 per leg. Correct notional = $25*2*50=$2,500 = cap on $10k account (not exceeded → ALLOW). If the hook wrongly applied 100x the notional would be $5,000 > cap and the order would be blocked. This fixture verifies that the explicit multiplier field is respected.",
+  "tool_name": "create_complex_order",
+  "tool_input": {
+    "type": "OTOCO",
+    "trigger-order": {
+      "time-in-force": "Day",
+      "order-type": "Limit",
+      "price": 25.00,
+      "legs": [
+        {
+          "instrument-type": "Future Option",
+          "symbol": "./ESM6 EW1M6 260619C5400",
+          "action": "Sell to Open",
+          "quantity": 2,
+          "multiplier": 50
+        },
+        {
+          "instrument-type": "Future Option",
+          "symbol": "./ESM6 EW1M6 260619P5200",
+          "action": "Sell to Open",
+          "quantity": 2,
+          "multiplier": 50
+        }
+      ]
+    },
+    "orders": [
+      {
+        "time-in-force": "GTC",
+        "order-type": "Limit",
+        "price": -12.50,
+        "legs": [
+          {
+            "instrument-type": "Future Option",
+            "symbol": "./ESM6 EW1M6 260619C5400",
+            "action": "Buy to Close",
+            "quantity": 2,
+            "multiplier": 50
+          },
+          {
+            "instrument-type": "Future Option",
+            "symbol": "./ESM6 EW1M6 260619P5200",
+            "action": "Buy to Close",
+            "quantity": 2,
+            "multiplier": 50
+          }
+        ]
+      },
+      {
+        "time-in-force": "GTC",
+        "order-type": "Limit",
+        "price": -50.00,
+        "legs": [
+          {
+            "instrument-type": "Future Option",
+            "symbol": "./ESM6 EW1M6 260619C5400",
+            "action": "Buy to Close",
+            "quantity": 2,
+            "multiplier": 50
+          },
+          {
+            "instrument-type": "Future Option",
+            "symbol": "./ESM6 EW1M6 260619P5200",
+            "action": "Buy to Close",
+            "quantity": 2,
+            "multiplier": 50
+          }
+        ]
+      }
+    ]
+  }
+}

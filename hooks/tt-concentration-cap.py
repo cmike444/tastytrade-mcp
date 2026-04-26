@@ -195,7 +195,9 @@ def get_opening_exposure(order):
             continue
         qty = abs(_safe_float(leg.get("quantity")) or 1)
         instrument_type = leg.get("instrument-type", "").lower()
-        multiplier = 100 if "option" in instrument_type else 1
+        multiplier = _safe_float(leg.get("multiplier"))
+        if multiplier is None or multiplier <= 0:
+            multiplier = 100 if "option" in instrument_type else 1
         key = (underlying, multiplier)
         if qty > per_underlying.get(key, 0):
             per_underlying[key] = qty
