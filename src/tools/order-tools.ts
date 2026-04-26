@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getClient } from "../tastytrade-client.js";
 import { formatApiError } from "./error-utils.js";
 import { coerceToArray } from "./schema-utils.js";
+import { extractItems } from "./render-utils.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 const DESTRUCTIVE = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true } as const;
@@ -307,6 +308,186 @@ export function registerOrderTools(server: McpServer) {
       try {
         const result = await getClient().orderService.postReconfirmOrder(accountNumber, orderId);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "check_bracket_violations",
+    [
+      "Scan an account's short option positions for missing GTC bracket orders.",
+      "A violation is any short Equity Option position with no live GTC 'Buy to Close' order covering its symbol.",
+      "Returns each violation with the average open price (credit received), suggested profit target (50% of credit),",
+      "and suggested stop loss (2× credit). Use submit_oco_bracket to fix violations.",
+    ].join(" "),
+    {
+      accountNumber: z.string().describe("Account number to scan for bracket violations"),
+    },
+    READ_ONLY,
+    async ({ accountNumber }) => {
+      try {
+        const client = getClient();
+
+        const posRaw = await client.balancesAndPositionsService.getPositionsList(accountNumber, {});
+        const positions: any[] = extractItems(posRaw);
+
+        const shortOptions = positions.filter(
+          (p: any) =>
+            p["instrument-type"] === "Equity Option" &&
+            p["quantity-direction"] === "Short"
+        );
+
+        if (shortOptions.length === 0) {
+          return { content: [{ type: "text" as const, text: "No short option positions found — no violations." }] };
+        }
+
+        const liveRaw = await client.orderService.getLiveOrders(accountNumber);
+        const liveOrders: any[] = extractItems(liveRaw);
+
+        const coveredSymbols = new Set<string>();
+        for (const order of liveOrders) {
+          const tif: string = (order["time-in-force"] ?? "").toUpperCase();
+          if (tif === "GTC") {
+            const legs: any[] = order.legs ?? [];
+            for (const leg of legs) {
+              if (leg.action === "Buy to Close") {
+                coveredSymbols.add(leg.symbol);
+              }
+            }
+          }
+        }
+
+        const violations = shortOptions
+          .filter((p: any) => !coveredSymbols.has(p.symbol))
+          .map((p: any) => {
+            const credit = Math.abs(parseFloat(p["average-open-price"] ?? "0"));
+            const quantity = Math.abs(parseFloat(p["quantity"] ?? "1"));
+            const profitTarget = Math.round(credit * 0.50 * 20) / 20;
+            const stopLoss = Math.round(credit * 2.00 * 20) / 20;
+            return {
+              symbol: p.symbol,
+              "underlying-symbol": p["underlying-symbol"],
+              "instrument-type": p["instrument-type"],
+              quantity,
+              "average-open-price": credit,
+              "suggested-profit-target": profitTarget,
+              "suggested-stop-loss": stopLoss,
+            };
+          });
+
+        if (violations.length === 0) {
+          return {
+            content: [{
+              type: "text" as const,
+              text: `All ${shortOptions.length} short option position(s) have GTC bracket orders. No violations.`,
+            }],
+          };
+        }
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({ violations, totalViolations: violations.length }),
+          }],
+        };
+      } catch (error: any) {
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
+      }
+    }
+  );
+
+  const OcoBracketLegSchema = z.object({
+    symbol: z.string().describe("OCC option symbol (e.g. 'SPY   250117C00450000')"),
+    "instrument-type": z.string().describe("Instrument type (e.g. 'Equity Option')"),
+    quantity: z.number().describe("Number of contracts"),
+  });
+
+  server.tool(
+    "submit_oco_bracket",
+    [
+      "Submit an OCO (One Cancels Other) bracket for one or more short option legs that are already open.",
+      "Constructs a GTC profit-target order at 50% of credit and a GTC stop order at 2× credit,",
+      "linked as OCO so the first fill cancels the other.",
+      "Pass dryRun: true to preview the OCO JSON without submitting.",
+      "For a strangle/straddle/iron condor, include all legs in the legs array — both orders will mirror the same legs.",
+    ].join(" "),
+    {
+      accountNumber: z.string().describe("Account number to place the bracket in"),
+      legs: z.preprocess(
+        coerceToArray,
+        z.array(OcoBracketLegSchema)
+      ).describe("Array of position legs to bracket — each needs symbol, instrument-type, quantity"),
+      credit: z.number().describe(
+        "Total net credit per unit received for the position (e.g. 5.50 for a $5.50 strangle). " +
+        "Used to compute profit target (50%) and stop loss (2×)."
+      ),
+      dryRun: z.boolean().optional().default(false).describe(
+        "If true, return the OCO JSON that would be submitted without actually placing the order (default: false)"
+      ),
+    },
+    DESTRUCTIVE,
+    async ({ accountNumber, legs, credit, dryRun }) => {
+      try {
+        const round5 = (n: number) => Math.round(n * 20) / 20;
+        const profitPrice = round5(credit * 0.50);
+        const stopPrice = round5(credit * 2.00);
+
+        const closingLegs = legs.map((leg) => ({
+          "instrument-type": leg["instrument-type"],
+          symbol: leg.symbol,
+          action: "Buy to Close",
+          quantity: leg.quantity,
+        }));
+
+        const ocoOrder = {
+          type: "OCO",
+          orders: [
+            {
+              "time-in-force": "GTC",
+              "order-type": "Limit",
+              price: profitPrice,
+              "price-effect": "Debit",
+              legs: closingLegs,
+            },
+            {
+              "time-in-force": "GTC",
+              "order-type": "Limit",
+              price: stopPrice,
+              "price-effect": "Debit",
+              legs: closingLegs,
+            },
+          ],
+        };
+
+        if (dryRun) {
+          return {
+            content: [{
+              type: "text" as const,
+              text: JSON.stringify({
+                dryRun: true,
+                message: "OCO bracket JSON (not submitted). Set dryRun: false to place the order.",
+                profitTarget: profitPrice,
+                stopLoss: stopPrice,
+                ocoOrder,
+              }),
+            }],
+          };
+        }
+
+        const result = await getClient().orderService.createComplexOrder(accountNumber, ocoOrder);
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              submitted: true,
+              profitTarget: profitPrice,
+              stopLoss: stopPrice,
+              result,
+            }),
+          }],
+        };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
       }

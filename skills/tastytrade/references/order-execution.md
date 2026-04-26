@@ -769,3 +769,50 @@ Review the response for:
 - Warnings or validation errors
 
 Present this summary to the user before asking for confirmation to place the order.
+
+---
+
+## Bracket Enforcement — Detecting and Fixing Missing Brackets
+
+Use these two tools when reviewing sessions for Tier 1 violations or when manual orders were placed without OTOCO brackets.
+
+### Step 1 — Detect violations
+
+```
+check_bracket_violations(accountNumber)
+```
+
+Scans all short Equity Option positions. A violation is any position with no live GTC `Buy to Close` order covering its symbol. Returns:
+- `symbol`, `underlying-symbol`, `quantity`
+- `average-open-price` — the credit received per contract
+- `suggested-profit-target` — 50% of credit, rounded to $0.05
+- `suggested-stop-loss` — 2× credit, rounded to $0.05
+
+### Step 2 — Submit an OCO bracket
+
+```
+submit_oco_bracket(accountNumber, legs, credit, dryRun)
+```
+
+Constructs a GTC OCO order with:
+- **Profit leg** — `Buy to Close` all legs at `credit × 0.50` (Limit, GTC)
+- **Stop leg** — `Buy to Close` all legs at `credit × 2.00` (Limit, GTC)
+
+The two closing orders are linked as OCO: the first to fill cancels the other.
+
+Pass `dryRun: true` to preview the OCO JSON without submitting. Set `dryRun: false` (or omit) to place the order.
+
+**For multi-leg strategies** (strangle, straddle, iron condor), include **all legs** in the `legs` array — both OCO orders will mirror the same leg set. The `credit` should be the **total net credit received** for the combined position.
+
+Example — bracket a short strangle on SPY (credit: $5.50, 2 contracts each):
+```json
+{
+  "accountNumber": "5WX12345",
+  "legs": [
+    {"symbol": "SPY   250620C00580000", "instrument-type": "Equity Option", "quantity": 2},
+    {"symbol": "SPY   250620P00520000", "instrument-type": "Equity Option", "quantity": 2}
+  ],
+  "credit": 5.50,
+  "dryRun": true
+}
+```
