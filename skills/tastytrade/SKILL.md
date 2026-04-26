@@ -161,6 +161,7 @@ Hooks in `~/.claude/hooks/` fire automatically after MCP calls and inject comput
 |---|---|---|
 | `get_candles` | `tt-compute-hv.py` | HV20, HV30; TSMOM 21d/63d/126d/252d; 52-week high proximity; momentum direction label |
 | `get_market_metrics` (detail="full") | `tt-compute-vrp.py` | IV environment (High/Neutral/Low/Extreme); VRP IVP signal; 30d IV; term structure slope; Forward Factor per expiry pair with FF=(FrontIV−FwdVol)/FwdVol; calendar signals (FF≥0.30); earnings/dividend dates |
+| `get_market_metrics` (detail="full") | `tt-ff-exit-monitor.py` | ⚠️ "Forward Factor edge is gone on [symbol] — rule requires closing this position" for any open calendar whose FF has dropped to ≤ 0%; silent when no calendars are open or all FFs remain positive; reads open positions from `/tmp/tt_positions.json` |
 | `get_options_greeks` | `tt-compute-skew.py` | 25Δ put/call IV; skew (P−C); directional label; momentum-skew signal if extreme (>5%) |
 | `get_historical_earnings` | `tt-compute-earnings.py` | EPS beat rate; avg surprise magnitude; PEAD directional bias; checklist for implied-vs-realized move comparison |
 | `get_transactions` | `tt-0dte-circuit-breaker.py` | 0DTE daily P&L vs $250 limit; weekly P&L vs $1,500 limit; ⛔ block or ✅ clear signal |

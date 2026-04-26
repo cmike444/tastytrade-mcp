@@ -12,7 +12,7 @@ Usage:
 The runner sets up the required sidecar files in /tmp before each test:
   /tmp/tt_pending_plan.json   — required by tt-require-plan
   /tmp/tt_netliq.json         — required by tt-concentration-cap
-  /tmp/tt_positions.json      — required by tt-concentration-cap
+  /tmp/tt_positions.json      — required by tt-concentration-cap and tt-ff-exit-monitor
 """
 
 import json
@@ -30,6 +30,7 @@ HOOKS = {
     "tt-require-bracket":     str(HOOKS_DIR / "tt-require-bracket.py"),
     "tt-concentration-cap":   str(HOOKS_DIR / "tt-concentration-cap.py"),
     "tt-require-plan":        str(HOOKS_DIR / "tt-require-plan.py"),
+    "tt-ff-exit-monitor":     str(HOOKS_DIR / "tt-ff-exit-monitor.py"),
 }
 
 PLAN_FILE     = "/tmp/tt_pending_plan.json"
@@ -100,7 +101,18 @@ def run_hook(hook_name, fixture_path, *, env=None):
 # ---------------------------------------------------------------------------
 
 class Test:
-    def __init__(self, name, fixture, hook, expected_exit, setup=None, teardown=None, note=""):
+    def __init__(
+        self,
+        name,
+        fixture,
+        hook,
+        expected_exit,
+        setup=None,
+        teardown=None,
+        note="",
+        stdout_contains=None,
+        stdout_absent=None,
+    ):
         self.name = name
         self.fixture = FIXTURES_DIR / fixture
         self.hook = hook
@@ -108,6 +120,8 @@ class Test:
         self.setup = setup or (lambda: None)
         self.teardown = teardown or (lambda: None)
         self.note = note
+        self.stdout_contains = stdout_contains
+        self.stdout_absent = stdout_absent
 
     def run(self):
         self.setup()
@@ -116,6 +130,10 @@ class Test:
         finally:
             self.teardown()
         passed = code == self.expected_exit
+        if passed and self.stdout_contains is not None:
+            passed = self.stdout_contains in stdout
+        if passed and self.stdout_absent is not None:
+            passed = self.stdout_absent not in stdout
         return {
             "name": self.name,
             "fixture": self.fixture.name,
@@ -352,6 +370,97 @@ def make_tests():
             setup=lambda: (write_netliq(100_000), remove_positions()),
             teardown=cap_files_cleanup,
             note="Hook must fail closed when /tmp/tt_positions.json is absent.",
+        ),
+
+        # ------------------------------------------------------------------
+        # tt-ff-exit-monitor — PostToolUse hook on get_market_metrics(detail="full")
+        # Fixture: ff_exit_monitor_full_response.json
+        #   AAPL term structure: May16 IV=28%, Jun20 IV=32% (contango → FF < 0 → WARN)
+        #   SPY  term structure: May16 IV=22%, Jun20 IV=19% (backwardation → FF > 0 → silent)
+        # ------------------------------------------------------------------
+        Test(
+            name="ff_exit_monitor / AAPL calendar FF < 0 → WARN in stdout",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-ff-exit-monitor",
+            expected_exit=0,
+            setup=lambda: write_positions([
+                {
+                    "symbol": "AAPL 260516C00150000",
+                    "instrument-type": "Equity Option",
+                    "quantity": 1,
+                    "quantity-direction": "Short",
+                    "underlying-symbol": "AAPL",
+                },
+                {
+                    "symbol": "AAPL 260620C00150000",
+                    "instrument-type": "Equity Option",
+                    "quantity": 1,
+                    "quantity-direction": "Long",
+                    "underlying-symbol": "AAPL",
+                },
+            ]),
+            teardown=remove_positions,
+            stdout_contains="Forward Factor edge is gone on AAPL",
+            note=(
+                "AAPL May16/Jun20 calendar: May16 IV=28% < Jun20 IV=32% (contango). "
+                "Forward vol between the two expirations exceeds front IV → FF < 0 → warning emitted."
+            ),
+        ),
+        Test(
+            name="ff_exit_monitor / SPY calendar FF > 0 → silent",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-ff-exit-monitor",
+            expected_exit=0,
+            setup=lambda: write_positions([
+                {
+                    "symbol": "SPY 260516C00580000",
+                    "instrument-type": "Equity Option",
+                    "quantity": 1,
+                    "quantity-direction": "Short",
+                    "underlying-symbol": "SPY",
+                },
+                {
+                    "symbol": "SPY 260620C00580000",
+                    "instrument-type": "Equity Option",
+                    "quantity": 1,
+                    "quantity-direction": "Long",
+                    "underlying-symbol": "SPY",
+                },
+            ]),
+            teardown=remove_positions,
+            stdout_absent="Forward Factor edge is gone",
+            note=(
+                "SPY May16/Jun20 calendar: May16 IV=22% > Jun20 IV=19% (backwardation). "
+                "FF is positive — no warning should be emitted."
+            ),
+        ),
+        Test(
+            name="ff_exit_monitor / no calendar positions → silent",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-ff-exit-monitor",
+            expected_exit=0,
+            setup=lambda: write_positions([
+                {
+                    "symbol": "AAPL",
+                    "instrument-type": "Equity",
+                    "quantity": 100,
+                    "quantity-direction": "Long",
+                    "underlying-symbol": "AAPL",
+                },
+            ]),
+            teardown=remove_positions,
+            stdout_absent="Forward Factor edge is gone",
+            note="No option calendar positions in the positions file → hook exits silently.",
+        ),
+        Test(
+            name="ff_exit_monitor / positions file missing → silent",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-ff-exit-monitor",
+            expected_exit=0,
+            setup=remove_positions,
+            teardown=remove_positions,
+            stdout_absent="Forward Factor edge is gone",
+            note="No /tmp/tt_positions.json file → hook exits silently without error.",
         ),
     ]
 

@@ -1,7 +1,8 @@
 # Hook Integration Tests
 
-Integration tests for the three pre-trade enforcement hooks
-(`tt-require-bracket`, `tt-concentration-cap`, `tt-require-plan`).
+Integration tests for the pre-trade enforcement hooks and PostToolUse monitor
+hooks (`tt-require-bracket`, `tt-concentration-cap`, `tt-require-plan`,
+`tt-ff-exit-monitor`).
 
 ## Running the tests
 
@@ -28,6 +29,7 @@ Field names use TastyTrade's actual hyphenated keys (`instrument-type`,
 | `put_spread.json` | Credit put spread (defined-risk) | bracket ALLOWS (equal BTO/STO qty = not naked) |
 | `futures_option_otoco.json` | /ES futures-option OTOCO, 50%/2× | Future Option instrument-type recognised; concentration uses trigger-order |
 | `over_concentrated_strangle.json` | OTOCO strangle exceeding 25% cap | concentration BLOCKS; verifies trigger-order fix |
+| `ff_exit_monitor_full_response.json` | PostToolUse `get_market_metrics(detail="full")` response | FF exit monitor: AAPL calendar FF<0 → WARN; SPY calendar FF>0 → silent; no calendars → silent; missing positions file → silent |
 
 ## Refreshing fixtures from real dry-run captures
 

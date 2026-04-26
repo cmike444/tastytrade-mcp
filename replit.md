@@ -112,6 +112,7 @@ The server automatically authenticates with TastyTrade on startup using stored s
 - **Port**: 5000
 
 ## Recent Changes
+- 2026-04-26: Added hooks/tt-ff-exit-monitor.py — PostToolUse hook on get_market_metrics(detail="full") that reads open calendar positions from /tmp/tt_positions.json, computes Forward Factor (FF = (FrontIV − FwdVol) / FwdVol) for each calendar spread, and warns when FF ≤ 0% (edge gone — exit rule triggered). Added 4 integration tests and fixture ff_exit_monitor_full_response.json. Updated SKILL.md Hook-Injected Signals table with new entry.
 - 2026-04-26: Added hooks/tests/ — integration test suite for pre-trade enforcement hooks with real-shaped TastyTrade order JSON fixtures (naked_short, bracketed_strangle, put_spread, futures_option_otoco, over_concentrated_strangle). Fixed two bugs in tt-concentration-cap.py: (1) OTOCO trigger-order.legs were not read for opening exposure, (2) OTOCO trigger-order.price was not read for notional calculation — both caused OTOCO orders to silently bypass the 25% concentration cap.
 - 2026-02-22: Server-side credential storage - TastyTrade credentials auto-loaded from Replit secrets on startup, removed authenticate_oauth tool to prevent credential exposure through chat
 - 2026-02-22: Added OAuth 2.1 authorization server for ChatGPT compatibility (PKCE, DCR, discovery endpoints)
