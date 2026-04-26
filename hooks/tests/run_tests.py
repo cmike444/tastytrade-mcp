@@ -426,6 +426,24 @@ def make_tests():
         ),
 
         # ------------------------------------------------------------------
+        # futures_option_otoco_5x — /MES futures-option OTOCO with explicit
+        # multiplier=5 field; verifies 5x is used instead of hard-coded 100x
+        # ------------------------------------------------------------------
+        Test(
+            name="futures_option_otoco_5x / tt-concentration-cap (explicit multiplier=5) → ALLOW",
+            fixture="futures_option_otoco_5x.json",
+            hook="tt-concentration-cap",
+            expected_exit=0,
+            setup=lambda: (write_netliq(10_000), write_positions([])),
+            teardown=cap_files_cleanup,
+            note=(
+                "netliq=$10k cap=$2500; price=$25 qty=2 multiplier=5 → notional=$25*2*5=$250 "
+                "which is well within the cap (ALLOW). With the wrong 100x multiplier "
+                "notional would be $5000 → BLOCK, so this test fails if multiplier field is ignored."
+            ),
+        ),
+
+        # ------------------------------------------------------------------
         # over_concentrated_strangle — OTOCO that exceeds 25% cap
         # ------------------------------------------------------------------
         Test(

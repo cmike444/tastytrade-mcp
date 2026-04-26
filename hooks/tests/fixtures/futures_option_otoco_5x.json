@@ -1,0 +1,72 @@
+{
+  "_comment": "Scenario: /MES futures-option short strangle OTOCO with explicit multiplier=5. Price=$25.00, qty=2 per leg. Correct notional = $25*2*5=$250 = well within cap on a $10k account (cap=$2,500 → ALLOW). If the hook wrongly applied 100x the notional would be $5,000 > cap and the order would be blocked. This fixture verifies that the explicit multiplier field is respected for micro-futures (/MES, 5×).",
+  "tool_name": "create_complex_order",
+  "tool_input": {
+    "type": "OTOCO",
+    "trigger-order": {
+      "time-in-force": "Day",
+      "order-type": "Limit",
+      "price": 25.00,
+      "legs": [
+        {
+          "instrument-type": "Future Option",
+          "symbol": "./MESM6 E1AM6 260619C20000",
+          "action": "Sell to Open",
+          "quantity": 2,
+          "multiplier": 5
+        },
+        {
+          "instrument-type": "Future Option",
+          "symbol": "./MESM6 E1AM6 260619P19000",
+          "action": "Sell to Open",
+          "quantity": 2,
+          "multiplier": 5
+        }
+      ]
+    },
+    "orders": [
+      {
+        "time-in-force": "GTC",
+        "order-type": "Limit",
+        "price": -12.50,
+        "legs": [
+          {
+            "instrument-type": "Future Option",
+            "symbol": "./MESM6 E1AM6 260619C20000",
+            "action": "Buy to Close",
+            "quantity": 2,
+            "multiplier": 5
+          },
+          {
+            "instrument-type": "Future Option",
+            "symbol": "./MESM6 E1AM6 260619P19000",
+            "action": "Buy to Close",
+            "quantity": 2,
+            "multiplier": 5
+          }
+        ]
+      },
+      {
+        "time-in-force": "GTC",
+        "order-type": "Limit",
+        "price": -50.00,
+        "legs": [
+          {
+            "instrument-type": "Future Option",
+            "symbol": "./MESM6 E1AM6 260619C20000",
+            "action": "Buy to Close",
+            "quantity": 2,
+            "multiplier": 5
+          },
+          {
+            "instrument-type": "Future Option",
+            "symbol": "./MESM6 E1AM6 260619P19000",
+            "action": "Buy to Close",
+            "quantity": 2,
+            "multiplier": 5
+          }
+        ]
+      }
+    ]
+  }
+}
