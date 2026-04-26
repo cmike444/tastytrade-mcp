@@ -1,5 +1,5 @@
 {
-  "_comment": "PostToolUse fixture for tt-ff-exit-monitor. Simulates get_market_metrics(detail='full') response for AAPL and SPY. Positions file is set up externally by the test runner. Three scenarios are exercised via different positions setups: (1) AAPL calendar with FF < 0 → WARN; (2) SPY calendar with FF > 0 → silent; (3) no calendars → silent.",
+  "_comment": "PostToolUse fixture for tt-ff-exit-monitor. Simulates get_market_metrics(detail='full') response for AAPL and SPY. Positions file is set up externally by the test runner. Three scenarios are exercised via different positions setups: (1) AAPL calendar with FF < 0 → WARN; (2) SPY calendar with FF > 0 → silent; (3) no calendars → silent. Earnings dates: AAPL 2026-05-10 (within front May16 window), SPY 2026-05-25 (within back Jun20 window).",
   "tool_name": "get_market_metrics",
   "tool_input": {
     "symbols": ["AAPL", "SPY"],
@@ -8,7 +8,7 @@
   "tool_response": [
     {
       "type": "text",
-      "text": "{\"data\": {\"items\": [{\"symbol\": \"AAPL\", \"implied-volatility-index\": 0.30, \"implied-volatility-index-rank\": 55, \"option-expiration-implied-volatilities\": [{\"expiration-date\": \"2026-05-16\", \"implied-volatility\": 0.28}, {\"expiration-date\": \"2026-06-20\", \"implied-volatility\": 0.32}]}, {\"symbol\": \"SPY\", \"implied-volatility-index\": 0.18, \"implied-volatility-index-rank\": 40, \"option-expiration-implied-volatilities\": [{\"expiration-date\": \"2026-05-16\", \"implied-volatility\": 0.22}, {\"expiration-date\": \"2026-06-20\", \"implied-volatility\": 0.19}]}]}}"
+      "text": "{\"data\": {\"items\": [{\"symbol\": \"AAPL\", \"implied-volatility-index\": 0.30, \"implied-volatility-index-rank\": 55, \"earnings-next-date\": \"2026-05-10\", \"option-expiration-implied-volatilities\": [{\"expiration-date\": \"2026-05-16\", \"implied-volatility\": 0.28}, {\"expiration-date\": \"2026-06-20\", \"implied-volatility\": 0.32}]}, {\"symbol\": \"SPY\", \"implied-volatility-index\": 0.18, \"implied-volatility-index-rank\": 40, \"earnings-next-date\": \"2026-05-25\", \"option-expiration-implied-volatilities\": [{\"expiration-date\": \"2026-05-16\", \"implied-volatility\": 0.22}, {\"expiration-date\": \"2026-06-20\", \"implied-volatility\": 0.19}]}]}}"
     }
   ]
 }

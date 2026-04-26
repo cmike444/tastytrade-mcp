@@ -139,7 +139,7 @@ def load_calendar_pairs():
 
 
 # ---------------------------------------------------------------------------
-# Extract term structure from the get_market_metrics tool response
+# Extract term structure and earnings dates from the get_market_metrics response
 # ---------------------------------------------------------------------------
 
 def _try_parse_json(value):
@@ -151,15 +151,10 @@ def _try_parse_json(value):
         return None
 
 
-def extract_term_structures(tool_response):
+def _parse_items(tool_response):
     """
-    Parse the get_market_metrics tool response and return a mapping:
-      { SYMBOL_UPPER: [ {expiration_date: date, iv: float}, ... ] }
-
-    The response arrives as a list of MCP content blocks:
-      [{"type": "text", "text": "{...json...}"}]
-
-    The JSON body can have various shapes; we try to handle them all.
+    Shared JSON-parsing helper that returns the list of per-symbol metric items
+    from a get_market_metrics tool response.
     """
     raw = tool_response
 
@@ -185,8 +180,45 @@ def extract_term_structures(tool_response):
     elif isinstance(raw, list):
         items = raw
 
+    return items if isinstance(items, list) else []
+
+
+def extract_earnings_dates(tool_response):
+    """
+    Parse the get_market_metrics tool response and return a mapping:
+      { SYMBOL_UPPER: date }
+
+    Only symbols with a valid 'earnings-next-date' field are included.
+    """
     result = {}
-    for item in items:
+    for item in _parse_items(tool_response):
+        if not isinstance(item, dict):
+            continue
+        symbol = str(item.get("symbol", "")).upper()
+        if not symbol:
+            continue
+        earn_str = item.get("earnings-next-date")
+        if not earn_str:
+            continue
+        try:
+            result[symbol] = date.fromisoformat(str(earn_str))
+        except (ValueError, TypeError):
+            continue
+    return result
+
+
+def extract_term_structures(tool_response):
+    """
+    Parse the get_market_metrics tool response and return a mapping:
+      { SYMBOL_UPPER: [ {expiration_date: date, iv: float}, ... ] }
+
+    The response arrives as a list of MCP content blocks:
+      [{"type": "text", "text": "{...json...}"}]
+
+    The JSON body can have various shapes; we try to handle them all.
+    """
+    result = {}
+    for item in _parse_items(tool_response):
         if not isinstance(item, dict):
             continue
         symbol = str(item.get("symbol", "")).upper()
@@ -305,8 +337,11 @@ def main():
     if not term_structures:
         sys.exit(0)
 
+    earnings_dates = extract_earnings_dates(tool_response)
+
     today = date.today()
     warnings = []
+    advisories = []
 
     for cal in calendars:
         underlying = cal["underlying"]
@@ -346,22 +381,59 @@ def main():
         )
         ff_pct = ff * 100
 
+        earn_date = earnings_dates.get(underlying)
+        earn_in_front = (
+            earn_date is not None and today < earn_date <= front_expiry
+        )
+        earn_in_back = (
+            earn_date is not None and front_expiry < earn_date <= back_expiry
+        )
+
         if ff <= 0:
-            warnings.append(
+            warn_lines = [
                 "Forward Factor edge is gone on {} — rule requires closing this position"
                 "  (FF = {:.1f}%, front IV = {:.1f}%, fwd vol = {:.1f}%)".format(
                     label, ff_pct, iv_front * 100, fwd_vol * 100
                 )
+            ]
+            if earn_in_back:
+                warn_lines.append(
+                    "  ► Earnings on {} fall within the BACK expiry window — back IV "
+                    "may include earnings premium, which could make FF appear lower than "
+                    "the true ex-earn FF. Verify ex-earn FF before closing.".format(
+                        earn_date
+                    )
+                )
+            elif earn_in_front:
+                warn_lines.append(
+                    "  ► Earnings on {} fall within the FRONT expiry window — front IV "
+                    "may include earnings premium. Ex-earn FF may be even lower; "
+                    "closing remains appropriate.".format(earn_date)
+                )
+            warnings.append("\n".join(warn_lines))
+        elif earn_in_front or earn_in_back:
+            window = "front" if earn_in_front else "back"
+            advisories.append(
+                "{} — FF = {:.1f}% (positive, no exit signal). "
+                "Earnings on {} fall within the {} expiry window — raw IVs include "
+                "earnings premium. Confirm ex-earn FF ≥ 0 before relying on this signal.".format(
+                    label, ff_pct, earn_date, window
+                )
             )
 
-    if warnings:
+    if warnings or advisories:
         print("=== FF EXIT MONITOR ===")
         for w in warnings:
             print("⚠", w)
-        print(
-            "\nExit rule (forward-factor.md): close the calendar when FF ≤ 0% — "
-            "the forward vol edge has mean-reverted and the trade is now pure theta."
-        )
+        if warnings:
+            print(
+                "\nExit rule (forward-factor.md): close the calendar when FF ≤ 0% — "
+                "the forward vol edge has mean-reverted and the trade is now pure theta."
+            )
+        if advisories:
+            print("\n--- Earnings-IV Advisory ---")
+            for a in advisories:
+                print("ℹ", a)
 
     sys.exit(0)
 

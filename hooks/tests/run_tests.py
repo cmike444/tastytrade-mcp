@@ -561,6 +561,69 @@ def make_tests():
         ),
 
         # ------------------------------------------------------------------
+        # tt-ff-exit-monitor — earnings-awareness (ex-earn IV advisory)
+        # Fixture earnings dates: AAPL 2026-05-10 (front window), SPY 2026-05-25 (back window)
+        # ------------------------------------------------------------------
+        Test(
+            name="ff_exit_monitor / AAPL FF<0 + earnings in front window → WARN + FRONT advisory",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-ff-exit-monitor",
+            expected_exit=0,
+            setup=lambda: write_positions([
+                {
+                    "symbol": "AAPL 260516C00150000",
+                    "instrument-type": "Equity Option",
+                    "quantity": 1,
+                    "quantity-direction": "Short",
+                    "underlying-symbol": "AAPL",
+                },
+                {
+                    "symbol": "AAPL 260620C00150000",
+                    "instrument-type": "Equity Option",
+                    "quantity": 1,
+                    "quantity-direction": "Long",
+                    "underlying-symbol": "AAPL",
+                },
+            ]),
+            teardown=remove_positions,
+            stdout_contains="FRONT expiry window",
+            note=(
+                "AAPL FF < 0 (contango) and earnings 2026-05-10 fall within front window "
+                "(before May16). Hook must emit the exit warning AND note that front IV "
+                "may include earnings premium."
+            ),
+        ),
+        Test(
+            name="ff_exit_monitor / SPY FF>0 + earnings in back window → earnings-IV advisory only",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-ff-exit-monitor",
+            expected_exit=0,
+            setup=lambda: write_positions([
+                {
+                    "symbol": "SPY 260516C00580000",
+                    "instrument-type": "Equity Option",
+                    "quantity": 1,
+                    "quantity-direction": "Short",
+                    "underlying-symbol": "SPY",
+                },
+                {
+                    "symbol": "SPY 260620C00580000",
+                    "instrument-type": "Equity Option",
+                    "quantity": 1,
+                    "quantity-direction": "Long",
+                    "underlying-symbol": "SPY",
+                },
+            ]),
+            teardown=remove_positions,
+            stdout_contains="back expiry window",
+            note=(
+                "SPY FF > 0 (backwardation, no exit warning) and earnings 2026-05-25 fall "
+                "within back window (after May16, before Jun20). Hook must emit an "
+                "earnings-IV advisory noting that raw IVs include earnings premium."
+            ),
+        ),
+
+        # ------------------------------------------------------------------
         # tt-calendar-expiry-alert — PostToolUse on get_positions or
         # get_market_metrics(detail="full")
         # ------------------------------------------------------------------
