@@ -1,5 +1,5 @@
 {
-  "_comment": "Scenario: single naked Sell-to-Open call — no OTOCO bracket. tt-require-bracket must BLOCK (exit 2). tt-concentration-cap does not fire (create_order). tt-require-plan must BLOCK when no plan file is present.",
+  "_comment": "Scenario: single naked Sell-to-Open call — no OTOCO bracket. tt-require-bracket must BLOCK (exit 2). tt-concentration-cap now fires on create_order (within limits it allows, over cap it blocks). tt-require-plan must BLOCK when no plan file is present.",
   "tool_name": "create_order",
   "tool_input": {
     "time-in-force": "Day",

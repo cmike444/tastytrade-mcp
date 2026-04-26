@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 PreToolUse hook: tt-concentration-cap
-Fires on: create_complex_order
+Fires on: create_order, create_complex_order
 
 Reads /tmp/tt_netliq.json for current net liq, reads /tmp/tt_positions.json
 for existing per-underlying exposure, and blocks any new opening order that
@@ -30,7 +30,7 @@ import json
 import os
 import sys
 
-WATCHED_TOOLS = {"create_complex_order"}
+WATCHED_TOOLS = {"create_complex_order", "create_order"}
 NET_LIQ_FILE = "/tmp/tt_netliq.json"
 POSITIONS_FILE = "/tmp/tt_positions.json"
 CAP_PCT = 0.25
@@ -223,7 +223,7 @@ def main():
         print(
             "BLOCKED -- concentration cap cannot be verified: {err}\n\n"
             "Run get_account_balances to populate {file} before submitting "
-            "any complex order.\n"
+            "any order.\n"
             "This hook fails closed to prevent unchecked concentration risk.".format(
                 err=netliq_err, file=NET_LIQ_FILE
             )
@@ -235,7 +235,7 @@ def main():
         print(
             "BLOCKED -- concentration cap cannot be verified: {err}\n\n"
             "Run get_positions to populate {file} before submitting "
-            "any complex order.\n"
+            "any order.\n"
             "This hook fails closed to prevent unchecked concentration risk.".format(
                 err=positions_err, file=POSITIONS_FILE
             )

@@ -172,6 +172,20 @@ def make_tests():
             }
         ])
 
+    def cap_files_low_netliq_aapl_near_cap():
+        # netliq=$10,000 → cap=$2,500; existing AAPL exposure=$2,300
+        # naked_short order adds $3.50*1*100=$350 → projected=$2,650 > cap
+        write_netliq(10_000)
+        write_positions([
+            {
+                "underlying-symbol": "AAPL",
+                "instrument-type": "Equity Option",
+                "average-open-price": 2.30,
+                "quantity": 10,
+                "multiplier": 100,
+            }
+        ])
+
     def cap_files_cleanup():
         remove_netliq()
         remove_positions()
@@ -220,13 +234,22 @@ def make_tests():
             note="Plan file present — plan hook allows (bracket hook handles blocking separately).",
         ),
         Test(
-            name="naked_short / tt-concentration-cap → ALLOW (not watched: create_order)",
+            name="naked_short / tt-concentration-cap (within limits) → ALLOW",
             fixture="naked_short.json",
             hook="tt-concentration-cap",
             expected_exit=0,
-            setup=lambda: None,
-            teardown=lambda: None,
-            note="concentration-cap only watches create_complex_order; create_order passes through.",
+            setup=cap_files_ok,
+            teardown=cap_files_cleanup,
+            note="create_order is now watched; $3.50*1*100=$350 notional on netliq=$100k is well within the 25% cap.",
+        ),
+        Test(
+            name="naked_short / tt-concentration-cap (exceeds 25% cap) → BLOCK",
+            fixture="naked_short.json",
+            hook="tt-concentration-cap",
+            expected_exit=2,
+            setup=cap_files_low_netliq_aapl_near_cap,
+            teardown=cap_files_cleanup,
+            note="Single-leg create_order: netliq=$10k cap=$2500; existing AAPL=$2300; order adds $3.50*1*100=$350 → projected $2650 > cap. Verifies create_order is now covered by the concentration cap.",
         ),
 
         # ------------------------------------------------------------------

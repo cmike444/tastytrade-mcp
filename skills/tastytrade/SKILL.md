@@ -202,7 +202,7 @@ These **PreToolUse** hooks fire before `create_order` / `create_complex_order` a
 | Hook | Exit | Fires before | Blocks / warns when |
 |---|---|---|---|
 | `tt-require-bracket.py` | Block (2) | `create_order`, `create_complex_order` | Any `Sell to Open` option leg lacks an OTOCO bracket. Validates bracket prices by structure: strangle/iron condor → 50% profit / 2× stop; straddle/iron butterfly → 25–35% profit / 1.5× stop; 0DTE → OTOCO required, prices not validated |
-| `tt-concentration-cap.py` | Block (2) | `create_complex_order` | Adding the new order would push any single underlying above 25% of net liq (reads `/tmp/tt_netliq.json`; existing exposure from `/tmp/tt_positions.json`) |
+| `tt-concentration-cap.py` | Block (2) | `create_order`, `create_complex_order` | Adding the new order would push any single underlying above 25% of net liq (reads `/tmp/tt_netliq.json`; existing exposure from `/tmp/tt_positions.json`) |
 | `tt-require-plan.py` | Block (2) | `create_order`, `create_complex_order` | `/tmp/tt_pending_plan.json` is missing, older than 60 minutes, or incomplete (requires: `thesis`, `profit_target`, `stop_loss`, `time_stop`, `invalidation`) |
 | `tt-require-dte.py` | Warn (1) | `create_order`, `create_complex_order` | Any `Sell to Open` option leg is at or inside 21 DTE at entry (warning only — does not block; 0DTE entries are exempt) |
 
