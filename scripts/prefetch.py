@@ -217,6 +217,95 @@ def compute_ff_score(term_structure: list) -> dict:
     return {"max_ff": round(max_ff, 3) if max_ff else None, "signal": signal, "pairs": pairs}
 
 
+def annotate_ff_earnings(ff_score: dict, earnings_date_str: Optional[str]) -> dict:
+    """
+    Annotate each FF pair with earnings-awareness per forward-factor.md Case A/B/C rules.
+
+    Case A: front expiry < earnings ≤ back expiry
+        → "earnings in back window (Case A) — confirm ex-earn FF; close before earnings"
+    Case B: earnings ≤ front expiry (both expiries after earnings)
+        → "earnings before front expiry (Case B) — both legs after earnings; confirm
+           ex-earn FF ≥ 0.30 AND willingness to be short earnings vol"
+    Potential Case B: Case A but earnings within ≤5 DTE of back expiry
+        → additionally flagged "[earnings within 5 DTE of back expiry — Case B proximity]"
+    Clean: earnings after back expiry (or no earnings data) — no annotation added.
+
+    Returns a copy of ff_score with 'earnings_case' and 'earnings_note' fields added to
+    each relevant pair, plus a top-level 'has_earnings_flag' bool when any pair is flagged.
+    """
+    if not earnings_date_str:
+        return ff_score
+
+    today = date.today()
+    try:
+        earn_date = date.fromisoformat(str(earnings_date_str))
+    except (ValueError, TypeError):
+        return ff_score
+
+    if earn_date < today:
+        return ff_score
+
+    annotated_pairs = []
+    has_earnings_flag = False
+
+    for pair in ff_score.get("pairs", []):
+        pair = dict(pair)
+        try:
+            front_date = date.fromisoformat(pair["near_expiry"])
+            back_date = date.fromisoformat(pair["far_expiry"])
+        except (ValueError, KeyError, TypeError):
+            annotated_pairs.append(pair)
+            continue
+
+        if earn_date <= front_date:
+            pair["earnings_case"] = "B"
+            pair["earnings_note"] = (
+                "earnings on {} before front expiry (Case B: both legs expire after earnings) — "
+                "only proceed if ex-earn FF ≥ 0.30 AND willing to be short earnings vol "
+                "(forward-factor.md §Earnings Case Handling)"
+            ).format(earn_date.isoformat())
+            has_earnings_flag = True
+        elif earn_date <= back_date:
+            near_back = (back_date - earn_date).days <= 5
+            pair["earnings_case"] = "A"
+            note = (
+                "earnings on {} in back window (Case A: front expires before earnings) — "
+                "confirm ex-earn FF ≥ 0.30; close on front expiry day before earnings"
+            ).format(earn_date.isoformat())
+            if near_back:
+                note += (
+                    " [earnings within 5 DTE of back expiry — potential Case B overlap; "
+                    "treat as Case B and confirm willingness to be short earnings vol]"
+                )
+            pair["earnings_note"] = note
+            has_earnings_flag = True
+        else:
+            pair["earnings_case"] = "clean"
+
+        pair["earnings_date"] = earn_date.isoformat()
+        annotated_pairs.append(pair)
+
+    result = dict(ff_score)
+    result["pairs"] = annotated_pairs
+    if has_earnings_flag:
+        result["has_earnings_flag"] = True
+        cases = [p.get("earnings_case") for p in annotated_pairs if p.get("earnings_case") not in (None, "clean")]
+        worst = "B" if "B" in cases else "A"
+        max_ff_val = result.get("max_ff")
+        ff_pct = "FF = {:.0f}%".format((max_ff_val - 1) * 100) if max_ff_val is not None else "FF data"
+        if worst == "B":
+            result["earnings_ff_note"] = (
+                "{} [earnings in front window (Case B) — both expiries after earnings; "
+                "confirm ex-earn FF ≥ 0.30 and willingness to be short earnings vol]"
+            ).format(ff_pct)
+        else:
+            result["earnings_ff_note"] = (
+                "{} [earnings in back window (Case A) — confirm ex-earn FF ≥ 0.30; "
+                "close on front expiry day before earnings]"
+            ).format(ff_pct)
+    return result
+
+
 def compute_regime(iv30: Optional[float], ivr: Optional[float]) -> str:
     """
     Classify volatility regime from IV30 (%) and IVR (0-100).
@@ -573,6 +662,9 @@ def fetch_market_metrics(session: TastyTradeSession, symbols: list) -> list:
         term_structure = _build_term_structure(expiry_ivs)
         ff_score = compute_ff_score(term_structure)
 
+        earnings_next_date = item.get("earnings-next-date") or item.get("earnings-date")
+        ff_score = annotate_ff_earnings(ff_score, earnings_next_date)
+
         results.append({
             "symbol": symbol,
             "iv30_pct": iv30_f,
@@ -583,7 +675,8 @@ def fetch_market_metrics(session: TastyTradeSession, symbols: list) -> list:
             "regime": regime,
             "ff_score": ff_score,
             "term_structure": term_structure[:8],
-            "earnings_date": item.get("earnings-date"),
+            "earnings_next_date": earnings_next_date,
+            "earnings_date": earnings_next_date,
             "dividend_next_date": item.get("dividend-next-date"),
         })
 

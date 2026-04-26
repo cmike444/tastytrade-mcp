@@ -30,7 +30,9 @@ Call the `read_daily_bundle` tool with `report: morning` to load the pre-fetched
 - `loss_monitor`: breach_count, warning_count, breaches (>5% net liq loss), warnings (2–5% loss),
   circuit_breaker (bool — true if any position breached)
 - `market_metrics`: list per active underlying with symbol, iv30_pct, ivr (0–100), ivp (0–100),
-  hv30_pct, vrp (iv30 minus hv30), regime (CALM/ELEVATED/STRESS), earnings_date, dividend_next_date
+  hv30_pct, vrp (iv30 minus hv30), regime (CALM/ELEVATED/STRESS), earnings_next_date (also
+  exposed as earnings_date for compatibility), dividend_next_date, and ff_score (with
+  has_earnings_flag and earnings_ff_note when upcoming earnings overlap any FF expiry window)
 - `regime_summary`: dict mapping symbol → regime string
 - `futures_snapshot`: list of front-month futures contracts with product (/ES, /NQ, /CL, /GC, /SI,
   /ZN 10-year T-note, /6E Euro FX), front_symbol, expiration, last (last traded price),
@@ -159,7 +161,7 @@ Generate the pre-close brief:
 3. **P&L Projection** — daily realized + unrealized snapshot; on-track vs off-track
 4. **Close or Hold Decisions** — for each position approaching max profit (>50% of credit),
    recommend close; for positions in trouble, recommend action
-5. **Overnight Risk** — any earnings or dividends in next 24h (from earnings_date / dividend_next_date)
+5. **Overnight Risk** — any earnings or dividends in next 24h (from earnings_next_date / dividend_next_date; earnings_date is an alias for the same value)
 6. **End-of-Day Checklist** — 5 concrete action items before 4:00 PM
 
 Do not make any further MCP tool calls after loading the bundle. Begin immediately.
@@ -227,7 +229,10 @@ Call the `read_daily_bundle` tool with `report: weekend` to load the pre-fetched
 - `positions`: all current open positions
 - `loss_monitor`: breach_count, warning_count, breaches, warnings
 - `full_watchlist_metrics`: full metrics list for all watchlisted symbols with iv30_pct, ivr,
-  ivp, hv30_pct, vrp, regime, earnings_date, dividend_next_date
+  ivp, hv30_pct, vrp, regime, earnings_next_date (also exposed as earnings_date for
+  compatibility), dividend_next_date, and ff_score (with has_earnings_flag and earnings_ff_note
+  when upcoming earnings overlap any FF expiry window — check these fields for every
+  calendar opportunity candidate before acting)
 - `top_candidates_by_ivr`: top 10 symbols by IVR (>40) — prime selling candidates
 - `pnl`: weekly_realized_pnl, monthly_realized_pnl, daily_0dte_circuit_breaker, weekly_circuit_breaker
 - `futures_snapshot`: front-month futures for /ES, /NQ, /CL, /GC, /SI, /ZN (10-year T-note),
