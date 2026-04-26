@@ -191,3 +191,24 @@ When used alongside the `trading-strategies` skill:
 - Default: 2–5% of net liq per trade
 - Express as: `$X (Y% of $Z net liq)`
 - Always check margin/buying power via `order_dry_run` before confirming size
+
+---
+
+## Pre-Trade Enforcement Hooks
+
+These **PreToolUse** hooks fire before `create_order` / `create_complex_order` and block submission when a rule is violated. They cannot be bypassed by skipping a step — the hook fires at the API call level.
+
+| Hook | Fires before | Blocks when |
+|---|---|---|
+| `tt-require-bracket.py` | `create_order`, `create_complex_order` | Any `Sell to Open` option leg lacks an OTOCO bracket with a profit-target child (LIMIT at 50% of credit) and a stop-loss child (STOP at 2× credit) |
+| `tt-concentration-cap.py` | `create_complex_order` | Adding the new order would push any single underlying above 25% of net liq (reads `/tmp/tt_netliq.json`; existing exposure from `/tmp/tt_positions.json`) |
+| `tt-require-plan.py` | `create_order`, `create_complex_order` | `/tmp/tt_pending_plan.json` is missing, older than 60 minutes, or incomplete (requires: `thesis`, `profit_target`, `stop_loss`, `time_stop`, `invalidation`) |
+
+**Before placing any order:**
+1. Write a trade plan to `/tmp/tt_pending_plan.json` with all five fields
+2. Call `get_account_balances` (populates `/tmp/tt_netliq.json`) then `get_positions` (save to `/tmp/tt_positions.json`) — concentration cap fails closed if either file is missing
+3. Wrap every naked short-premium open in an OTOCO order with profit and stop child orders
+
+**Nakedness definition** (`tt-require-bracket.py`): A STO option leg is naked when BTO contracts on the same underlying are fewer than STO contracts (quantity parity). 1:1 spreads are defined-risk and do not require a bracket. Ratio spreads (2:1) require a bracket for the unhedged leg. When per-leg prices are provided, a near-zero BTO debit (< 5% of STO credit) is also treated as naked regardless of quantity.
+
+**Concentration approximation** (`tt-concentration-cap.py`): New-order exposure is estimated as `|net_price| × max_opening_leg_quantity × multiplier` per underlying. This is a conservative over-estimate for multi-leg spreads where the net credit is small relative to notional; it may flag a roll or adjustment order at the boundary. If blocked, review actual position sizes with `get_positions` before closing legs.
