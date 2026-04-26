@@ -4,9 +4,9 @@ PreToolUse hook: tt-require-dte
 Fires on: create_order, create_complex_order
 
 Warns when any Sell-to-Open option leg in the order is already at or inside
-21 DTE. The 21-DTE rule is a mechanical time stop — VRP positions should be
-entered with enough time remaining to capture premium before the gamma-risk
-zone begins.
+the configurable DTE threshold (default 21, override via TT_DTE_WARN_THRESHOLD).
+The threshold is a mechanical time stop — VRP positions should be entered with
+enough time remaining to capture premium before the gamma-risk zone begins.
 
 This hook does NOT block the order (exit 1 = warning). The agent receives
 the warning in context and should confirm the DTE is intentional before
@@ -23,12 +23,26 @@ Future option:    ./ESM4 EW1M4 240119C4800
 """
 
 import json
+import os
 import re
 import sys
 from datetime import date
 
 WATCHED_TOOLS = {"create_order", "create_complex_order"}
-DTE_WARN_THRESHOLD = 21
+
+# Number of days-to-expiration at or below which a Sell-to-Open triggers a
+# warning.  Override via the TT_DTE_WARN_THRESHOLD environment variable
+# (integer, e.g. export TT_DTE_WARN_THRESHOLD=14).  Defaults to 21.
+_dte_env = os.environ.get("TT_DTE_WARN_THRESHOLD", "")
+try:
+    DTE_WARN_THRESHOLD = int(_dte_env) if _dte_env.strip() else 21
+except ValueError:
+    print(
+        "tt-require-dte: TT_DTE_WARN_THRESHOLD={!r} is not a valid integer; "
+        "falling back to 21.".format(_dte_env),
+        file=sys.stderr,
+    )
+    DTE_WARN_THRESHOLD = 21
 
 
 def _parse_expiry(symbol):
@@ -115,16 +129,17 @@ def main():
         lines.append("  {} — {} DTE (threshold: {} DTE)".format(symbol, dte, DTE_WARN_THRESHOLD))
 
     print(
-        "WARNING -- entering at or inside 21 DTE:\n"
+        "WARNING -- entering at or inside {threshold} DTE:\n"
         "{details}\n\n"
-        "The 21-DTE rule is a mechanical time stop: VRP positions should be entered\n"
-        "with >21 DTE remaining so they can be closed at 21 DTE before gamma risk\n"
+        "The {threshold}-DTE rule is a mechanical time stop: VRP positions should be entered\n"
+        "with >{threshold} DTE remaining so they can be closed at {threshold} DTE before gamma risk\n"
         "accelerates. Entering now means the time stop triggers immediately or very\n"
         "soon after entry, leaving no room to capture premium.\n\n"
         "If this is intentional (e.g. an earnings straddle, a same-day roll, or a\n"
         "strategy that explicitly uses short-dated expiries), confirm before proceeding.\n"
         "The order has NOT been blocked — this is an advisory warning.".format(
-            details="\n".join(lines)
+            threshold=DTE_WARN_THRESHOLD,
+            details="\n".join(lines),
         )
     )
     sys.exit(1)
