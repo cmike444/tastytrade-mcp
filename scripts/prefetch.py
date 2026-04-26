@@ -318,6 +318,88 @@ def compute_daily_pnl_from_transactions(transactions: list) -> dict:
     }
 
 
+def detect_calendar_expiry_alerts(raw_positions: list) -> list:
+    """
+    Inspect raw TastyTrade positions for calendar spreads whose front (short)
+    leg expires today or tomorrow (≤ 1 DTE).
+
+    A calendar pair: same underlying root, option type (C/P), and strike;
+    one Short leg and one Long leg where the back expiry > front expiry.
+
+    Returns a list of human-readable warning strings (empty if none).
+    """
+    import re as _re
+
+    def _parse(symbol):
+        s = (symbol or "").strip()
+        m = _re.search(r"(\d{6})([CP])(\d+)$", s)
+        if not m:
+            return None
+        date_str, opt_type, strike_raw = m.group(1), m.group(2), m.group(3)
+        try:
+            expiry = date(2000 + int(date_str[:2]), int(date_str[2:4]), int(date_str[4:6]))
+        except ValueError:
+            return None
+        prefix = s[: m.start()].strip()
+        parts = prefix.split()
+        if not parts:
+            return None
+        underlying = parts[0].lstrip("./").upper()
+        return underlying, expiry, opt_type, strike_raw
+
+    groups: dict = {}
+    for pos in raw_positions:
+        instrument_type = pos.get("instrument-type", "").lower()
+        if "option" not in instrument_type:
+            continue
+        qty_dir = (pos.get("quantity-direction") or "").strip()
+        if qty_dir not in ("Long", "Short"):
+            continue
+        parsed = _parse(pos.get("symbol", ""))
+        if not parsed:
+            continue
+        underlying, expiry, opt_type, strike_raw = parsed
+        key = (underlying, opt_type, strike_raw)
+        groups.setdefault(key, {})
+        if qty_dir == "Short":
+            existing = groups[key].get("Short")
+            if existing is None or expiry < existing:
+                groups[key]["Short"] = expiry
+        else:
+            existing = groups[key].get("Long")
+            if existing is None or expiry > existing:
+                groups[key]["Long"] = expiry
+
+    today = date.today()
+    warnings = []
+    for (underlying, opt_type, strike_raw), legs in groups.items():
+        front_expiry = legs.get("Short")
+        back_expiry = legs.get("Long")
+        if front_expiry is None or back_expiry is None:
+            continue
+        if back_expiry <= front_expiry:
+            continue
+        dte = (front_expiry - today).days
+        if dte < 0 or dte > 1:
+            continue
+        label = "{}  {}{}  {}/{}".format(
+            underlying,
+            opt_type,
+            strike_raw,
+            front_expiry.strftime("%b%d"),
+            back_expiry.strftime("%b%d"),
+        )
+        warnings.append(
+            "Calendar {} front leg expires {} — close the spread before market"
+            " close to avoid pin risk."
+            " Exit rule (forward-factor.md §a): close on front expiry day as a"
+            " spread before the close — avoids pin risk and assignment.".format(
+                label, front_expiry.isoformat()
+            )
+        )
+    return warnings
+
+
 def _parse_option_expiry(symbol: str) -> Optional[str]:
     """
     Extract expiration date (YYYY-MM-DD) from an OCC option symbol.
@@ -363,10 +445,17 @@ def fetch_account_context(session: TastyTradeSession) -> dict:
     positions_raw = session.get(f"/accounts/{acct}/positions")
     positions = positions_raw.get("data", {}).get("items", [])
 
+    try:
+        with open("/tmp/tt_positions.json", "w") as _pf:
+            json.dump(positions, _pf)
+    except OSError:
+        pass
+
     orders_raw = session.get(f"/accounts/{acct}/orders/live")
     live_orders = orders_raw.get("data", {}).get("items", [])
 
     loss_mon = compute_loss_monitor(positions, net_liq)
+    calendar_alerts = detect_calendar_expiry_alerts(positions)
 
     compact_positions = []
     for p in positions:
@@ -412,6 +501,7 @@ def fetch_account_context(session: TastyTradeSession) -> dict:
         "live_order_count": len(compact_orders),
         "live_orders": compact_orders,
         "loss_monitor": loss_mon,
+        "calendar_alerts": calendar_alerts,
     }
 
 
@@ -669,8 +759,16 @@ def fetch_morning(session: TastyTradeSession) -> dict:
     txns = fetch_transactions_recent(session, days=7)
     pnl_summary = compute_daily_pnl_from_transactions(txns)
 
-    return {
-        "meta": build_metadata("morning"),
+    calendar_alerts = account.get("calendar_alerts", [])
+    if calendar_alerts:
+        print(f"  ⚠  {len(calendar_alerts)} calendar expiry alert(s) detected.")
+
+    bundle: dict = {"meta": build_metadata("morning")}
+
+    if calendar_alerts:
+        bundle["calendar_expiry_alerts"] = calendar_alerts
+
+    bundle.update({
         "account": {
             "account_number": account.get("account_number"),
             "net_liq": account.get("net_liq"),
@@ -684,7 +782,9 @@ def fetch_morning(session: TastyTradeSession) -> dict:
         "regime_summary": regime_summary,
         "futures_snapshot": futures_snapshot,
         "pnl": pnl_summary,
-    }
+    })
+
+    return bundle
 
 
 def fetch_weekend(session: TastyTradeSession) -> dict:
