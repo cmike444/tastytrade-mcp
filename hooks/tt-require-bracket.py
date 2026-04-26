@@ -185,7 +185,8 @@ def get_bracket_children(order):
 
 def compute_naked_qty(legs, order_price):
     """
-    Returns {underlying: naked_qty} for option legs where naked_qty > 0.
+    Returns {underlying: (naked_qty, sto_total, bto_total)} for option legs
+    where naked_qty > 0.
 
     Primary test: quantity parity (BTO < STO → naked).
     Secondary test: near-zero BTO debit (< 5% of STO credit) → decorative.
@@ -215,7 +216,7 @@ def compute_naked_qty(legs, order_price):
 
         unhedged = max(0.0, sto_total - bto_total)
         if unhedged > 0:
-            naked[underlying] = unhedged
+            naked[underlying] = (unhedged, sto_total, bto_total)
             continue
 
         if (
@@ -227,7 +228,7 @@ def compute_naked_qty(legs, order_price):
             if bto_leg_price is not None:
                 min_debit = order_price * MIN_BTO_DEBIT_FRACTION
                 if bto_leg_price < min_debit:
-                    naked[underlying] = sto_list[0][0]
+                    naked[underlying] = (sto_list[0][0], sto_total, bto_total)
 
     return naked
 
@@ -441,15 +442,36 @@ def main():
     if ok:
         sys.exit(0)
 
-    summary = ", ".join(
-        "{} ({} naked contract{})".format(u, int(q), "s" if q != 1 else "")
-        for u, q in sorted(naked.items())
+    summary_parts = []
+    ratio_notes = []
+    for u, (naked_qty, sto_total, bto_total) in sorted(naked.items()):
+        summary_parts.append(
+            "{} ({} naked contract{})".format(
+                u, int(naked_qty), "s" if naked_qty != 1 else ""
+            )
+        )
+        if sto_total > bto_total > 0:
+            ratio_notes.append(
+                "  {}: ratio spread detected -- {} STO vs {} BTO = {} naked leg{}; "
+                "add {} more BTO contract{} or reduce STO qty to fully hedge".format(
+                    u,
+                    int(sto_total), int(bto_total), int(naked_qty),
+                    "s" if naked_qty != 1 else "",
+                    int(naked_qty), "s" if naked_qty != 1 else "",
+                )
+            )
+
+    summary = ", ".join(summary_parts)
+    ratio_section = (
+        "\nRatio-spread detail:\n" + "\n".join(ratio_notes)
+        if ratio_notes else ""
     )
 
     print(
         "BLOCKED -- naked short premium detected: {summary}\n\n"
         "Bracket issues:\n"
-        "{issues}\n\n"
+        "{issues}"
+        "{ratio_section}\n\n"
         "Every unhedged Sell-to-Open option requires an OTOCO bracket.\n"
         "Strategy-specific bracket levels (absolute close debit vs credit received):\n"
         "  Strangle / Iron Condor:     profit at 50% of credit (close at 50%), stop at 2× credit\n"
@@ -460,6 +482,7 @@ def main():
         "the hook compares absolute values.".format(
             summary=summary,
             issues="\n".join("  - " + p for p in problems),
+            ratio_section=ratio_section,
         )
     )
     sys.exit(2)

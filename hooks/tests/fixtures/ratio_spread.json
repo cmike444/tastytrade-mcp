@@ -1,0 +1,66 @@
+{
+  "_comment": "Scenario: 2:1 put ratio spread with a valid OTOCO bracket. 1 BTO SPY 515P + 2 STO SPY 520P → 1 naked STO leg. Net credit = $2.00. Profit target = $1.00 (50% of $2.00). Stop = $4.00 (2× $2.00). tt-require-bracket must ALLOW (exit 0) because the OTOCO bracket covers the net credit.",
+  "tool_name": "create_complex_order",
+  "tool_input": {
+    "type": "OTOCO",
+    "trigger-order": {
+      "time-in-force": "Day",
+      "order-type": "Limit",
+      "price": 2.00,
+      "legs": [
+        {
+          "instrument-type": "Equity Option",
+          "symbol": "SPY 260619P00520000",
+          "action": "Sell to Open",
+          "quantity": 2
+        },
+        {
+          "instrument-type": "Equity Option",
+          "symbol": "SPY 260619P00515000",
+          "action": "Buy to Open",
+          "quantity": 1
+        }
+      ]
+    },
+    "orders": [
+      {
+        "time-in-force": "GTC",
+        "order-type": "Limit",
+        "price": -1.00,
+        "legs": [
+          {
+            "instrument-type": "Equity Option",
+            "symbol": "SPY 260619P00520000",
+            "action": "Buy to Close",
+            "quantity": 2
+          },
+          {
+            "instrument-type": "Equity Option",
+            "symbol": "SPY 260619P00515000",
+            "action": "Sell to Close",
+            "quantity": 1
+          }
+        ]
+      },
+      {
+        "time-in-force": "GTC",
+        "order-type": "Limit",
+        "price": -4.00,
+        "legs": [
+          {
+            "instrument-type": "Equity Option",
+            "symbol": "SPY 260619P00520000",
+            "action": "Buy to Close",
+            "quantity": 2
+          },
+          {
+            "instrument-type": "Equity Option",
+            "symbol": "SPY 260619P00515000",
+            "action": "Sell to Close",
+            "quantity": 1
+          }
+        ]
+      }
+    ]
+  }
+}

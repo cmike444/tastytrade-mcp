@@ -322,6 +322,29 @@ def make_tests():
         ),
 
         # ------------------------------------------------------------------
+        # ratio_spread — 2:1 put ratio spread (1 BTO + 2 STO → 1 naked leg)
+        # ------------------------------------------------------------------
+        Test(
+            name="ratio_spread_naked / tt-require-bracket → BLOCK (no OTOCO, ratio spread)",
+            fixture="ratio_spread_naked.json",
+            hook="tt-require-bracket",
+            expected_exit=2,
+            setup=plan_on,
+            teardown=plan_off,
+            note="2 STO vs 1 BTO = 1 naked leg; no bracket at all → must be blocked with ratio-spread detail.",
+            stdout_contains="ratio spread detected",
+        ),
+        Test(
+            name="ratio_spread / tt-require-bracket → ALLOW (OTOCO bracket covers net credit)",
+            fixture="ratio_spread.json",
+            hook="tt-require-bracket",
+            expected_exit=0,
+            setup=plan_on,
+            teardown=plan_off,
+            note="2:1 put ratio spread wrapped in OTOCO; profit=$1.00 (50% of $2.00), stop=$4.00 (2× $2.00) — within allowed range.",
+        ),
+
+        # ------------------------------------------------------------------
         # futures_option_otoco — /ES futures-option OTOCO
         # ------------------------------------------------------------------
         Test(

@@ -1,0 +1,23 @@
+{
+  "_comment": "Scenario: 2:1 put ratio spread with NO bracket. 1 BTO SPY 515P + 2 STO SPY 520P → 1 naked STO leg. tt-require-bracket must BLOCK (exit 2) because there is no OTOCO wrapper at all.",
+  "tool_name": "create_complex_order",
+  "tool_input": {
+    "time-in-force": "Day",
+    "order-type": "Limit",
+    "price": 2.00,
+    "legs": [
+      {
+        "instrument-type": "Equity Option",
+        "symbol": "SPY 260619P00520000",
+        "action": "Sell to Open",
+        "quantity": 2
+      },
+      {
+        "instrument-type": "Equity Option",
+        "symbol": "SPY 260619P00515000",
+        "action": "Buy to Open",
+        "quantity": 1
+      }
+    ]
+  }
+}
