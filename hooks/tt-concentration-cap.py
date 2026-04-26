@@ -112,10 +112,7 @@ def load_existing_exposure():
 
             avg_price = _safe_float(pos.get("average-open-price"))
             qty = abs(_safe_float(pos.get("quantity")) or 0)
-            instrument_type = pos.get("instrument-type", "").lower()
-            multiplier = _safe_float(pos.get("multiplier"))
-            if multiplier is None or multiplier <= 0:
-                multiplier = 100 if "option" in instrument_type else 1
+            multiplier = _get_multiplier(pos)
 
             if avg_price is None:
                 continue
@@ -137,6 +134,21 @@ def _safe_float(val):
         return float(val)
     except (TypeError, ValueError):
         return None
+
+
+def _get_multiplier(item):
+    """
+    Return the contract multiplier for a leg or position dict.
+
+    Uses the 'multiplier' field when present and positive; otherwise
+    defaults to 100 for options (instrument-type contains 'option') and
+    1 for everything else (equities, futures, etc.).
+    """
+    multiplier = _safe_float(item.get("multiplier"))
+    if multiplier is None or multiplier <= 0:
+        instrument_type = item.get("instrument-type", "").lower()
+        multiplier = 100 if "option" in instrument_type else 1
+    return multiplier
 
 
 def _extract_underlying(symbol):
@@ -194,10 +206,7 @@ def get_opening_exposure(order):
         if not underlying:
             continue
         qty = abs(_safe_float(leg.get("quantity")) or 1)
-        instrument_type = leg.get("instrument-type", "").lower()
-        multiplier = _safe_float(leg.get("multiplier"))
-        if multiplier is None or multiplier <= 0:
-            multiplier = 100 if "option" in instrument_type else 1
+        multiplier = _get_multiplier(leg)
         key = (underlying, multiplier)
         if qty > per_underlying.get(key, 0):
             per_underlying[key] = qty
