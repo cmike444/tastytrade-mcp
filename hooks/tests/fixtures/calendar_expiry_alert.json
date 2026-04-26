@@ -1,0 +1,11 @@
+{
+  "_comment": "PostToolUse fixture for tt-calendar-expiry-alert. Simulates get_positions response. The hook reads open calendar positions from /tmp/tt_positions.json (written by the test runner), not from the tool response itself. Tests exercise: (1) front leg expires today → WARN; (2) front leg expires tomorrow → WARN; (3) front leg expires in 5 days → silent; (4) no calendar positions → silent; (5) positions file missing → silent.",
+  "tool_name": "get_positions",
+  "tool_input": {},
+  "tool_response": [
+    {
+      "type": "text",
+      "text": "{\"data\": {\"items\": []}}"
+    }
+  ]
+}

@@ -21,16 +21,18 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import date as _date, timedelta
 from pathlib import Path
 
 HOOKS_DIR = Path(__file__).parent.parent
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 HOOKS = {
-    "tt-require-bracket":     str(HOOKS_DIR / "tt-require-bracket.py"),
-    "tt-concentration-cap":   str(HOOKS_DIR / "tt-concentration-cap.py"),
-    "tt-require-plan":        str(HOOKS_DIR / "tt-require-plan.py"),
-    "tt-ff-exit-monitor":     str(HOOKS_DIR / "tt-ff-exit-monitor.py"),
+    "tt-require-bracket":        str(HOOKS_DIR / "tt-require-bracket.py"),
+    "tt-concentration-cap":      str(HOOKS_DIR / "tt-concentration-cap.py"),
+    "tt-require-plan":           str(HOOKS_DIR / "tt-require-plan.py"),
+    "tt-ff-exit-monitor":        str(HOOKS_DIR / "tt-ff-exit-monitor.py"),
+    "tt-calendar-expiry-alert":  str(HOOKS_DIR / "tt-calendar-expiry-alert.py"),
 }
 
 PLAN_FILE     = "/tmp/tt_pending_plan.json"
@@ -73,6 +75,37 @@ def write_positions(positions=None):
 
 def remove_positions():
     Path(POSITIONS_FILE).unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Calendar-expiry-alert helpers  (dynamic dates so the hook's date.today()
+# check always works regardless of when the test suite is run)
+# ---------------------------------------------------------------------------
+
+def _occ_date(d):
+    """Format a date as the 6-char YYMMDD used inside OCC symbols."""
+    return d.strftime("%y%m%d")
+
+
+def _calendar_positions(front_date, back_date,
+                        underlying="AAPL", opt_type="C", strike="00200000"):
+    """Return a two-leg positions list representing a calendar spread."""
+    return [
+        {
+            "symbol": "{} {}{}{}".format(underlying, _occ_date(front_date), opt_type, strike),
+            "instrument-type": "Equity Option",
+            "quantity": 1,
+            "quantity-direction": "Short",
+            "underlying-symbol": underlying,
+        },
+        {
+            "symbol": "{} {}{}{}".format(underlying, _occ_date(back_date), opt_type, strike),
+            "instrument-type": "Equity Option",
+            "quantity": 1,
+            "quantity-direction": "Long",
+            "underlying-symbol": underlying,
+        },
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -525,6 +558,103 @@ def make_tests():
             teardown=remove_positions,
             stdout_absent="Forward Factor edge is gone",
             note="No /tmp/tt_positions.json file → hook exits silently without error.",
+        ),
+
+        # ------------------------------------------------------------------
+        # tt-calendar-expiry-alert — PostToolUse on get_positions or
+        # get_market_metrics(detail="full")
+        # ------------------------------------------------------------------
+        Test(
+            name="calendar_expiry_alert / front expires today → WARN",
+            fixture="calendar_expiry_alert.json",
+            hook="tt-calendar-expiry-alert",
+            expected_exit=0,
+            setup=lambda: write_positions(
+                _calendar_positions(
+                    front_date=_date.today(),
+                    back_date=_date.today() + timedelta(days=30),
+                )
+            ),
+            teardown=remove_positions,
+            stdout_contains="close the spread before market close",
+            note="Front leg expires today (DTE=0) → warning must be printed.",
+        ),
+        Test(
+            name="calendar_expiry_alert / front expires tomorrow → WARN",
+            fixture="calendar_expiry_alert.json",
+            hook="tt-calendar-expiry-alert",
+            expected_exit=0,
+            setup=lambda: write_positions(
+                _calendar_positions(
+                    front_date=_date.today() + timedelta(days=1),
+                    back_date=_date.today() + timedelta(days=31),
+                )
+            ),
+            teardown=remove_positions,
+            stdout_contains="close the spread before market close",
+            note="Front leg expires tomorrow (DTE=1) → warning must be printed.",
+        ),
+        Test(
+            name="calendar_expiry_alert / front 5 DTE → silent",
+            fixture="calendar_expiry_alert.json",
+            hook="tt-calendar-expiry-alert",
+            expected_exit=0,
+            setup=lambda: write_positions(
+                _calendar_positions(
+                    front_date=_date.today() + timedelta(days=5),
+                    back_date=_date.today() + timedelta(days=35),
+                )
+            ),
+            teardown=remove_positions,
+            stdout_absent="close the spread before market close",
+            note="Front leg expires in 5 days (DTE=5) → no warning; only ≤1 DTE triggers alert.",
+        ),
+        Test(
+            name="calendar_expiry_alert / no calendar positions → silent",
+            fixture="calendar_expiry_alert.json",
+            hook="tt-calendar-expiry-alert",
+            expected_exit=0,
+            setup=lambda: write_positions([
+                {
+                    "symbol": "AAPL",
+                    "instrument-type": "Equity",
+                    "quantity": 100,
+                    "quantity-direction": "Long",
+                    "underlying-symbol": "AAPL",
+                },
+            ]),
+            teardown=remove_positions,
+            stdout_absent="close the spread before market close",
+            note="Positions contain only equity, no calendar spread → hook exits silently.",
+        ),
+        Test(
+            name="calendar_expiry_alert / positions file missing → silent",
+            fixture="calendar_expiry_alert.json",
+            hook="tt-calendar-expiry-alert",
+            expected_exit=0,
+            setup=remove_positions,
+            teardown=remove_positions,
+            stdout_absent="close the spread before market close",
+            note="No /tmp/tt_positions.json → hook exits silently without error.",
+        ),
+        Test(
+            name="calendar_expiry_alert / get_market_metrics detail=full trigger → WARN",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-calendar-expiry-alert",
+            expected_exit=0,
+            setup=lambda: write_positions(
+                _calendar_positions(
+                    front_date=_date.today(),
+                    back_date=_date.today() + timedelta(days=30),
+                    underlying="AAPL",
+                )
+            ),
+            teardown=remove_positions,
+            stdout_contains="close the spread before market close",
+            note=(
+                "Hook also fires on get_market_metrics(detail='full'); with front leg "
+                "expiring today it must emit the warning regardless of the tool used."
+            ),
         ),
     ]
 
