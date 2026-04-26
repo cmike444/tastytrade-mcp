@@ -33,6 +33,11 @@ from datetime import date
 WATCHED_TOOLS = {"get_market_metrics"}
 POSITIONS_FILE = "/tmp/tt_positions.json"
 
+# Sidecar file: maps SYMBOL → earnings implied move fraction (straddle/stock).
+# Written by the user or a prefetch script before get_market_metrics is called.
+# Example: {"AAPL": 0.05, "SPY": 0.02}
+EARNINGS_MOVES_FILE = "/tmp/tt_earnings_moves.json"
+
 # Maximum days difference allowed when matching a calendar expiry to a term
 # structure entry that does not fall exactly on that expiry.
 MAX_EXPIRY_MATCH_DAYS = 7
@@ -249,6 +254,68 @@ def extract_term_structures(tool_response):
 
 
 # ---------------------------------------------------------------------------
+# Earnings implied-move sidecar
+# ---------------------------------------------------------------------------
+
+def load_earnings_moves():
+    """
+    Load /tmp/tt_earnings_moves.json and return a dict mapping SYMBOL → implied_move.
+
+    implied_move is a fraction representing the market-expected one-standard-deviation
+    earnings move: straddle_price / stock_price (e.g. 0.05 = 5%).
+
+    Returns an empty dict if the file is absent or malformed.
+    """
+    if not os.path.exists(EARNINGS_MOVES_FILE):
+        return {}
+    try:
+        with open(EARNINGS_MOVES_FILE) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    result = {}
+    for sym, val in data.items():
+        try:
+            move = float(val)
+            if move > 0:
+                result[str(sym).upper()] = move
+        except (TypeError, ValueError):
+            continue
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Ex-earn IV computation
+# ---------------------------------------------------------------------------
+
+def compute_exearn_iv(iv_raw, dte, implied_move):
+    """
+    Strip the earnings jump variance from iv_raw to obtain the ex-earnings IV.
+
+    Formula (from computations.md):
+        IV_exearn² × T = IV_raw² × T − implied_move²
+        => IV_exearn² = IV_raw² − implied_move² / T
+
+    Args:
+        iv_raw:       Raw IV in decimal (e.g. 0.30 = 30%).
+        dte:          Calendar days to expiry of the window containing earnings.
+        implied_move: Earnings implied move fraction (straddle / stock price).
+
+    Returns the ex-earn IV in decimal, or None if the result would be imaginary
+    (i.e. the full variance is dominated by the earnings jump).
+    """
+    t = dte / 365.0
+    if t <= 0 or implied_move <= 0 or iv_raw <= 0:
+        return None
+    var_exearn = iv_raw ** 2 - (implied_move ** 2) / t
+    if var_exearn <= 0:
+        return None
+    return math.sqrt(var_exearn)
+
+
+# ---------------------------------------------------------------------------
 # Forward vol and FF computation
 # ---------------------------------------------------------------------------
 
@@ -338,6 +405,7 @@ def main():
         sys.exit(0)
 
     earnings_dates = extract_earnings_dates(tool_response)
+    earnings_moves = load_earnings_moves()
 
     today = date.today()
     warnings = []
@@ -389,6 +457,36 @@ def main():
             earn_date is not None and front_expiry < earn_date <= back_expiry
         )
 
+        # ------------------------------------------------------------------
+        # Ex-earn IV adjustment: strip earnings jump variance from whichever
+        # expiry window contains the earnings event, then recompute FF.
+        # Formula: IV_exearn² × T = IV_raw² × T − implied_move²
+        # ------------------------------------------------------------------
+        implied_move = earnings_moves.get(underlying) if (earn_in_front or earn_in_back) else None
+        ff_exearn = None
+        fwd_vol_exearn = None
+        iv_front_exearn = iv_front
+        iv_back_exearn = iv_back
+
+        if implied_move is not None:
+            adjustment_applied = False
+            if earn_in_front:
+                iv_fe = compute_exearn_iv(iv_front, dte_front, implied_move)
+                if iv_fe is not None:
+                    iv_front_exearn = iv_fe
+                    adjustment_applied = True
+            elif earn_in_back:
+                iv_be = compute_exearn_iv(iv_back, dte_back, implied_move)
+                if iv_be is not None:
+                    iv_back_exearn = iv_be
+                    adjustment_applied = True
+
+            if adjustment_applied:
+                fwd_vol_exearn = compute_forward_vol(
+                    iv_front_exearn, dte_front, iv_back_exearn, dte_back
+                )
+                ff_exearn = compute_ff(iv_front_exearn, fwd_vol_exearn)
+
         if ff <= 0:
             warn_lines = [
                 "Forward Factor edge is gone on {} — rule requires closing this position"
@@ -397,29 +495,80 @@ def main():
                 )
             ]
             if earn_in_back:
-                warn_lines.append(
-                    "  ► Earnings on {} fall within the BACK expiry window — back IV "
-                    "may include earnings premium, which could make FF appear lower than "
-                    "the true ex-earn FF. Verify ex-earn FF before closing.".format(
-                        earn_date
+                if ff_exearn is not None:
+                    warn_lines.append(
+                        "  ► Earnings on {} fall within the BACK expiry window — back IV "
+                        "includes earnings premium (implied move {:.1f}%). "
+                        "Ex-earn FF = {:.1f}% (ex-earn front IV {:.1f}%, ex-earn fwd vol {:.1f}%). "
+                        "{}".format(
+                            earn_date,
+                            implied_move * 100,
+                            ff_exearn * 100,
+                            iv_front_exearn * 100,
+                            fwd_vol_exearn * 100,
+                            "Ex-earn FF is also ≤ 0 — closing remains appropriate."
+                            if ff_exearn <= 0
+                            else "Ex-earn FF is positive — back earnings premium was masking the true signal; verify before closing.",
+                        )
                     )
-                )
+                else:
+                    warn_lines.append(
+                        "  ► Earnings on {} fall within the BACK expiry window — back IV "
+                        "may include earnings premium, which could make FF appear lower than "
+                        "the true ex-earn FF. Verify ex-earn FF before closing.".format(
+                            earn_date
+                        )
+                    )
             elif earn_in_front:
-                warn_lines.append(
-                    "  ► Earnings on {} fall within the FRONT expiry window — front IV "
-                    "may include earnings premium. Ex-earn FF may be even lower; "
-                    "closing remains appropriate.".format(earn_date)
-                )
+                if ff_exearn is not None:
+                    warn_lines.append(
+                        "  ► Earnings on {} fall within the FRONT expiry window — front IV "
+                        "includes earnings premium (implied move {:.1f}%). "
+                        "Ex-earn FF = {:.1f}% (ex-earn front IV {:.1f}%, ex-earn fwd vol {:.1f}%). "
+                        "Ex-earn FF is even lower; closing remains appropriate.".format(
+                            earn_date,
+                            implied_move * 100,
+                            ff_exearn * 100,
+                            iv_front_exearn * 100,
+                            fwd_vol_exearn * 100,
+                        )
+                    )
+                else:
+                    warn_lines.append(
+                        "  ► Earnings on {} fall within the FRONT expiry window — front IV "
+                        "may include earnings premium. Ex-earn FF may be even lower; "
+                        "closing remains appropriate.".format(earn_date)
+                    )
             warnings.append("\n".join(warn_lines))
         elif earn_in_front or earn_in_back:
             window = "front" if earn_in_front else "back"
-            advisories.append(
-                "{} — FF = {:.1f}% (positive, no exit signal). "
-                "Earnings on {} fall within the {} expiry window — raw IVs include "
-                "earnings premium. Confirm ex-earn FF ≥ 0 before relying on this signal.".format(
-                    label, ff_pct, earn_date, window
+            if ff_exearn is not None:
+                advisories.append(
+                    "{} — raw FF = {:.1f}%, ex-earn FF = {:.1f}% "
+                    "(implied move {:.1f}%, earnings on {} in {} window, "
+                    "ex-earn front IV {:.1f}%, ex-earn fwd vol {:.1f}%). "
+                    "{}".format(
+                        label,
+                        ff_pct,
+                        ff_exearn * 100,
+                        implied_move * 100,
+                        earn_date,
+                        window,
+                        iv_front_exearn * 100,
+                        fwd_vol_exearn * 100,
+                        "Ex-earn FF ≥ 0 — edge confirmed after stripping earnings premium."
+                        if ff_exearn >= 0
+                        else "Ex-earn FF < 0 — edge is gone after stripping earnings premium; consider closing.",
+                    )
                 )
-            )
+            else:
+                advisories.append(
+                    "{} — FF = {:.1f}% (positive, no exit signal). "
+                    "Earnings on {} fall within the {} expiry window — raw IVs include "
+                    "earnings premium. Confirm ex-earn FF ≥ 0 before relying on this signal.".format(
+                        label, ff_pct, earn_date, window
+                    )
+                )
 
     if warnings or advisories:
         print("=== FF EXIT MONITOR ===")

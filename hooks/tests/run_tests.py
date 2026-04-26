@@ -76,6 +76,14 @@ def write_positions(positions=None):
 def remove_positions():
     Path(POSITIONS_FILE).unlink(missing_ok=True)
 
+EARNINGS_MOVES_FILE = "/tmp/tt_earnings_moves.json"
+
+def write_earnings_moves(moves):
+    Path(EARNINGS_MOVES_FILE).write_text(json.dumps(moves))
+
+def remove_earnings_moves():
+    Path(EARNINGS_MOVES_FILE).unlink(missing_ok=True)
+
 
 # ---------------------------------------------------------------------------
 # Calendar-expiry-alert helpers  (dynamic dates so the hook's date.today()
@@ -679,6 +687,240 @@ def make_tests():
                 "SPY FF > 0 (backwardation, no exit warning) and earnings 2026-05-25 fall "
                 "within back window (after May16, before Jun20). Hook must emit an "
                 "earnings-IV advisory noting that raw IVs include earnings premium."
+            ),
+        ),
+
+        # ------------------------------------------------------------------
+        # tt-ff-exit-monitor — ex-earn FF computation (task #84)
+        # Fixture earnings dates: AAPL 2026-05-10 (front window), SPY 2026-05-25 (back window)
+        # Earnings moves sidecar: {"AAPL": 0.04, "SPY": 0.02}
+        # ------------------------------------------------------------------
+        Test(
+            name="ff_exit_monitor / AAPL FF<0 + earnings in front window + implied_move → ex-earn FF reported",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-ff-exit-monitor",
+            expected_exit=0,
+            setup=lambda: [
+                write_positions([
+                    {
+                        "symbol": "AAPL 260516C00150000",
+                        "instrument-type": "Equity Option",
+                        "quantity": 1,
+                        "quantity-direction": "Short",
+                        "underlying-symbol": "AAPL",
+                    },
+                    {
+                        "symbol": "AAPL 260620C00150000",
+                        "instrument-type": "Equity Option",
+                        "quantity": 1,
+                        "quantity-direction": "Long",
+                        "underlying-symbol": "AAPL",
+                    },
+                ]),
+                write_earnings_moves({"AAPL": 0.04}),
+            ],
+            teardown=lambda: [remove_positions(), remove_earnings_moves()],
+            stdout_contains="Ex-earn FF",
+            note=(
+                "AAPL FF < 0 and earnings May10 in front window. Sidecar provides implied "
+                "move 4%. Hook must strip earnings premium from front IV and report "
+                "ex-earn FF in the warning output."
+            ),
+        ),
+        Test(
+            name="ff_exit_monitor / AAPL FF<0 + earnings in front window + implied_move → closing remains appropriate",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-ff-exit-monitor",
+            expected_exit=0,
+            setup=lambda: [
+                write_positions([
+                    {
+                        "symbol": "AAPL 260516C00150000",
+                        "instrument-type": "Equity Option",
+                        "quantity": 1,
+                        "quantity-direction": "Short",
+                        "underlying-symbol": "AAPL",
+                    },
+                    {
+                        "symbol": "AAPL 260620C00150000",
+                        "instrument-type": "Equity Option",
+                        "quantity": 1,
+                        "quantity-direction": "Long",
+                        "underlying-symbol": "AAPL",
+                    },
+                ]),
+                write_earnings_moves({"AAPL": 0.04}),
+            ],
+            teardown=lambda: [remove_positions(), remove_earnings_moves()],
+            stdout_contains="closing remains appropriate",
+            note=(
+                "When FF<0 and earnings are in the FRONT window, stripping the earnings "
+                "premium lowers front IV further, so ex-earn FF is even more negative. "
+                "The hook must confirm that closing remains appropriate."
+            ),
+        ),
+        Test(
+            name="ff_exit_monitor / SPY FF>0 + earnings in back window + implied_move → ex-earn FF reported in advisory",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-ff-exit-monitor",
+            expected_exit=0,
+            setup=lambda: [
+                write_positions([
+                    {
+                        "symbol": "SPY 260516C00580000",
+                        "instrument-type": "Equity Option",
+                        "quantity": 1,
+                        "quantity-direction": "Short",
+                        "underlying-symbol": "SPY",
+                    },
+                    {
+                        "symbol": "SPY 260620C00580000",
+                        "instrument-type": "Equity Option",
+                        "quantity": 1,
+                        "quantity-direction": "Long",
+                        "underlying-symbol": "SPY",
+                    },
+                ]),
+                write_earnings_moves({"SPY": 0.02}),
+            ],
+            teardown=lambda: [remove_positions(), remove_earnings_moves()],
+            stdout_contains="ex-earn FF",
+            note=(
+                "SPY FF > 0 and earnings May25 in back window. Sidecar provides implied "
+                "move 2%. Hook must strip earnings premium from back IV and report "
+                "the ex-earn FF in the advisory output."
+            ),
+        ),
+        Test(
+            name="ff_exit_monitor / SPY FF>0 + earnings in back window + implied_move → edge confirmed",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-ff-exit-monitor",
+            expected_exit=0,
+            setup=lambda: [
+                write_positions([
+                    {
+                        "symbol": "SPY 260516C00580000",
+                        "instrument-type": "Equity Option",
+                        "quantity": 1,
+                        "quantity-direction": "Short",
+                        "underlying-symbol": "SPY",
+                    },
+                    {
+                        "symbol": "SPY 260620C00580000",
+                        "instrument-type": "Equity Option",
+                        "quantity": 1,
+                        "quantity-direction": "Long",
+                        "underlying-symbol": "SPY",
+                    },
+                ]),
+                write_earnings_moves({"SPY": 0.02}),
+            ],
+            teardown=lambda: [remove_positions(), remove_earnings_moves()],
+            stdout_contains="Ex-earn FF",
+            note=(
+                "SPY back IV is inflated by earnings premium. After stripping, back IV "
+                "drops, raising ex-earn FF above raw FF — edge is confirmed. Hook must "
+                "report 'Ex-earn FF' in the advisory."
+            ),
+        ),
+        Test(
+            name="ff_exit_monitor / AAPL FF<0 + earnings in front window + implied_move too large → no ex-earn FF numeric",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-ff-exit-monitor",
+            expected_exit=0,
+            setup=lambda: [
+                write_positions([
+                    {
+                        "symbol": "AAPL 260516C00150000",
+                        "instrument-type": "Equity Option",
+                        "quantity": 1,
+                        "quantity-direction": "Short",
+                        "underlying-symbol": "AAPL",
+                    },
+                    {
+                        "symbol": "AAPL 260620C00150000",
+                        "instrument-type": "Equity Option",
+                        "quantity": 1,
+                        "quantity-direction": "Long",
+                        "underlying-symbol": "AAPL",
+                    },
+                ]),
+                write_earnings_moves({"AAPL": 0.10}),
+            ],
+            teardown=lambda: [remove_positions(), remove_earnings_moves()],
+            stdout_contains="FRONT expiry window",
+            stdout_absent="Ex-earn FF =",
+            note=(
+                "Implied move of 10% exceeds front IV over 20 DTE — ex-earn variance is "
+                "non-positive, so compute_exearn_iv returns None. Hook must fall back to "
+                "advisory-only text without emitting a numeric 'Ex-earn FF = ...' value."
+            ),
+        ),
+        Test(
+            name="ff_exit_monitor / SPY FF>0 + earnings in back window + implied_move too large → no ex-earn FF numeric",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-ff-exit-monitor",
+            expected_exit=0,
+            setup=lambda: [
+                write_positions([
+                    {
+                        "symbol": "SPY 260516C00580000",
+                        "instrument-type": "Equity Option",
+                        "quantity": 1,
+                        "quantity-direction": "Short",
+                        "underlying-symbol": "SPY",
+                    },
+                    {
+                        "symbol": "SPY 260620C00580000",
+                        "instrument-type": "Equity Option",
+                        "quantity": 1,
+                        "quantity-direction": "Long",
+                        "underlying-symbol": "SPY",
+                    },
+                ]),
+                write_earnings_moves({"SPY": 0.10}),
+            ],
+            teardown=lambda: [remove_positions(), remove_earnings_moves()],
+            stdout_contains="back expiry window",
+            stdout_absent="Ex-earn FF =",
+            note=(
+                "Implied move of 10% exceeds back IV over 55 DTE — ex-earn variance is "
+                "non-positive, so compute_exearn_iv returns None. Hook must fall back to "
+                "advisory-only text without emitting a numeric 'Ex-earn FF = ...' value."
+            ),
+        ),
+        Test(
+            name="ff_exit_monitor / earnings in front window + no sidecar → falls back to advisory-only text",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-ff-exit-monitor",
+            expected_exit=0,
+            setup=lambda: [
+                write_positions([
+                    {
+                        "symbol": "AAPL 260516C00150000",
+                        "instrument-type": "Equity Option",
+                        "quantity": 1,
+                        "quantity-direction": "Short",
+                        "underlying-symbol": "AAPL",
+                    },
+                    {
+                        "symbol": "AAPL 260620C00150000",
+                        "instrument-type": "Equity Option",
+                        "quantity": 1,
+                        "quantity-direction": "Long",
+                        "underlying-symbol": "AAPL",
+                    },
+                ]),
+                remove_earnings_moves(),
+            ],
+            teardown=lambda: [remove_positions(), remove_earnings_moves()],
+            stdout_contains="FRONT expiry window",
+            stdout_absent="implied move",
+            note=(
+                "When the earnings moves sidecar is absent, the hook falls back to the "
+                "advisory-only message (no ex-earn FF computed — 'implied move' text only "
+                "appears when the sidecar provides a value). The FRONT expiry window "
+                "note must still appear."
             ),
         ),
 
