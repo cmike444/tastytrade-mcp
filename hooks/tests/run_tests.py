@@ -33,6 +33,7 @@ HOOKS = {
     "tt-require-plan":           str(HOOKS_DIR / "tt-require-plan.py"),
     "tt-ff-exit-monitor":        str(HOOKS_DIR / "tt-ff-exit-monitor.py"),
     "tt-calendar-expiry-alert":  str(HOOKS_DIR / "tt-calendar-expiry-alert.py"),
+    "tt-require-dte":            str(HOOKS_DIR / "tt-require-dte.py"),
 }
 
 PLAN_FILE     = "/tmp/tt_pending_plan.json"
@@ -178,6 +179,19 @@ def run_hook(hook_name, fixture_path, *, env=None):
     return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 
+def run_hook_payload(hook_name, payload, *, env=None):
+    """Run a hook with the given payload dict on stdin. Returns (exit_code, stdout, stderr)."""
+    hook_path = HOOKS[hook_name]
+    result = subprocess.run(
+        [sys.executable, hook_path],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        env={**os.environ, **(env or {})},
+    )
+    return result.returncode, result.stdout.strip(), result.stderr.strip()
+
+
 # ---------------------------------------------------------------------------
 # Test definitions
 # ---------------------------------------------------------------------------
@@ -227,6 +241,93 @@ class Test:
             "stderr": stderr,
             "note": self.note,
         }
+
+
+class TestDTE:
+    """
+    Like Test but uses a dynamically-generated payload dict instead of a
+    static fixture file.  Use when the hook inspects date.today() and the
+    OCC symbol dates must be computed relative to the current date.
+    """
+
+    def __init__(
+        self,
+        name,
+        payload_fn,
+        hook,
+        expected_exit,
+        env=None,
+        setup=None,
+        teardown=None,
+        note="",
+        stdout_contains=None,
+        stdout_absent=None,
+    ):
+        self.name = name
+        self.payload_fn = payload_fn
+        self.hook = hook
+        self.expected_exit = expected_exit
+        self.env = env or {}
+        self.setup = setup or (lambda: None)
+        self.teardown = teardown or (lambda: None)
+        self.note = note
+        self.stdout_contains = stdout_contains
+        self.stdout_absent = stdout_absent
+        self.fixture = "(dynamic)"
+
+    def run(self):
+        self.setup()
+        try:
+            payload = self.payload_fn()
+            code, stdout, stderr = run_hook_payload(self.hook, payload, env=self.env)
+        finally:
+            self.teardown()
+        passed = code == self.expected_exit
+        if passed and self.stdout_contains is not None:
+            passed = self.stdout_contains in stdout
+        if passed and self.stdout_absent is not None:
+            passed = self.stdout_absent not in stdout
+        return {
+            "name": self.name,
+            "fixture": self.fixture,
+            "hook": self.hook,
+            "expected": self.expected_exit,
+            "got": code,
+            "passed": passed,
+            "stdout": stdout,
+            "stderr": stderr,
+            "note": self.note,
+        }
+
+
+# ---------------------------------------------------------------------------
+# DTE test payload helpers
+# ---------------------------------------------------------------------------
+
+def _occ_symbol(underlying, expiry_date, opt_type="C", strike="00200000"):
+    """Build an OCC option symbol with the given expiry date embedded."""
+    return "{} {}{}{}".format(underlying, expiry_date.strftime("%y%m%d"), opt_type, strike)
+
+
+def _dte_order(symbol, instrument_type="Equity Option", action="Sell to Open",
+               tool_name="create_order"):
+    """Return a minimal hook-input envelope for a single-leg option order."""
+    return {
+        "tool_name": tool_name,
+        "tool_input": {
+            "time-in-force": "Day",
+            "order-type": "Limit",
+            "price": 3.50,
+            "legs": [
+                {
+                    "instrument-type": instrument_type,
+                    "symbol": symbol,
+                    "action": action,
+                    "quantity": 1,
+                }
+            ],
+        },
+    }
 
 
 def make_tests():
@@ -1092,6 +1193,224 @@ def make_tests():
             note=(
                 "Cross-contract /ES calendar with front leg 5 DTE (>1) → no alert; "
                 "only ≤1 DTE triggers the warning."
+            ),
+        ),
+
+        # ------------------------------------------------------------------
+        # tt-require-dte — DTE warning hook
+        # ------------------------------------------------------------------
+
+        # Default threshold (21 DTE): STO option exactly at threshold → WARN
+        TestDTE(
+            name="tt-require-dte / STO at 21 DTE (default threshold) → WARN (exit 1)",
+            payload_fn=lambda: _dte_order(
+                _occ_symbol("AAPL", _date.today() + timedelta(days=21)),
+                instrument_type="Equity Option",
+                action="Sell to Open",
+            ),
+            hook="tt-require-dte",
+            expected_exit=1,
+            stdout_contains="WARNING",
+            note=(
+                "STO equity option with exactly 21 DTE equals the default threshold; "
+                "hook must print a WARNING and exit 1."
+            ),
+        ),
+
+        # Default threshold (21 DTE): STO option one day above threshold → ALLOW
+        TestDTE(
+            name="tt-require-dte / STO at 22 DTE (default threshold) → ALLOW (exit 0)",
+            payload_fn=lambda: _dte_order(
+                _occ_symbol("AAPL", _date.today() + timedelta(days=22)),
+                instrument_type="Equity Option",
+                action="Sell to Open",
+            ),
+            hook="tt-require-dte",
+            expected_exit=0,
+            stdout_absent="WARNING",
+            note=(
+                "STO equity option with 22 DTE is one day above the default 21-DTE threshold; "
+                "hook must exit silently."
+            ),
+        ),
+
+        # Default threshold (21 DTE): STO option below threshold → WARN
+        TestDTE(
+            name="tt-require-dte / STO at 20 DTE (default threshold) → WARN (exit 1)",
+            payload_fn=lambda: _dte_order(
+                _occ_symbol("AAPL", _date.today() + timedelta(days=20)),
+                instrument_type="Equity Option",
+                action="Sell to Open",
+            ),
+            hook="tt-require-dte",
+            expected_exit=1,
+            stdout_contains="WARNING",
+            note=(
+                "STO equity option with 20 DTE is one day below the default 21-DTE threshold; "
+                "hook must warn (exit 1). Ensures the comparator uses <= not ==."
+            ),
+        ),
+
+        # Custom threshold via env var: DTE=14 warns when threshold=14
+        TestDTE(
+            name="tt-require-dte / STO at 14 DTE, threshold=14 → WARN (exit 1)",
+            payload_fn=lambda: _dte_order(
+                _occ_symbol("AAPL", _date.today() + timedelta(days=14)),
+                instrument_type="Equity Option",
+                action="Sell to Open",
+            ),
+            hook="tt-require-dte",
+            expected_exit=1,
+            env={"TT_DTE_WARN_THRESHOLD": "14"},
+            stdout_contains="WARNING",
+            note=(
+                "TT_DTE_WARN_THRESHOLD=14; STO option at exactly 14 DTE must trigger a warning."
+            ),
+        ),
+
+        # Custom threshold via env var: DTE=15 is allowed when threshold=14
+        TestDTE(
+            name="tt-require-dte / STO at 15 DTE, threshold=14 → ALLOW (exit 0)",
+            payload_fn=lambda: _dte_order(
+                _occ_symbol("AAPL", _date.today() + timedelta(days=15)),
+                instrument_type="Equity Option",
+                action="Sell to Open",
+            ),
+            hook="tt-require-dte",
+            expected_exit=0,
+            env={"TT_DTE_WARN_THRESHOLD": "14"},
+            stdout_absent="WARNING",
+            note=(
+                "TT_DTE_WARN_THRESHOLD=14; STO option at 15 DTE is above the threshold → silent."
+            ),
+        ),
+
+        # Custom threshold via env var: DTE=13 warns when threshold=14 (below)
+        TestDTE(
+            name="tt-require-dte / STO at 13 DTE, threshold=14 → WARN (exit 1)",
+            payload_fn=lambda: _dte_order(
+                _occ_symbol("AAPL", _date.today() + timedelta(days=13)),
+                instrument_type="Equity Option",
+                action="Sell to Open",
+            ),
+            hook="tt-require-dte",
+            expected_exit=1,
+            env={"TT_DTE_WARN_THRESHOLD": "14"},
+            stdout_contains="WARNING",
+            note=(
+                "TT_DTE_WARN_THRESHOLD=14; STO option at 13 DTE is one day below the custom threshold; "
+                "hook must warn (exit 1). Ensures the comparator uses <= not ==."
+            ),
+        ),
+
+        # 0DTE exemption: STO option expiring today → ALLOW (intraday entries are valid)
+        TestDTE(
+            name="tt-require-dte / STO at 0 DTE → ALLOW (0DTE exempt)",
+            payload_fn=lambda: _dte_order(
+                _occ_symbol("AAPL", _date.today()),
+                instrument_type="Equity Option",
+                action="Sell to Open",
+            ),
+            hook="tt-require-dte",
+            expected_exit=0,
+            stdout_absent="WARNING",
+            note=(
+                "0DTE entries are valid intraday positions; hook must exit silently even though "
+                "DTE (0) is well below the default threshold."
+            ),
+        ),
+
+        # Non-option instrument exemption: equity STO → ALLOW
+        TestDTE(
+            name="tt-require-dte / equity leg (non-option) → ALLOW (instrument exempt)",
+            payload_fn=lambda: _dte_order(
+                "AAPL",
+                instrument_type="Equity",
+                action="Sell to Open",
+            ),
+            hook="tt-require-dte",
+            expected_exit=0,
+            stdout_absent="WARNING",
+            note=(
+                "instrument-type='Equity' is not an option; hook must skip the leg and exit 0."
+            ),
+        ),
+
+        # Closing order exemption: Sell to Close → ALLOW
+        TestDTE(
+            name="tt-require-dte / Sell to Close leg → ALLOW (closing order exempt)",
+            payload_fn=lambda: _dte_order(
+                _occ_symbol("AAPL", _date.today() + timedelta(days=5)),
+                instrument_type="Equity Option",
+                action="Sell to Close",
+            ),
+            hook="tt-require-dte",
+            expected_exit=0,
+            stdout_absent="WARNING",
+            note=(
+                "action='Sell to Close' is a closing order; hook must ignore it and exit 0 "
+                "even though 5 DTE is inside the default threshold."
+            ),
+        ),
+
+        # Unparseable expiry exemption: symbol with no embedded YYMMDD → ALLOW
+        TestDTE(
+            name="tt-require-dte / unparseable expiry symbol → ALLOW (expiry exempt)",
+            payload_fn=lambda: _dte_order(
+                "AAPL",
+                instrument_type="Equity Option",
+                action="Sell to Open",
+            ),
+            hook="tt-require-dte",
+            expected_exit=0,
+            stdout_absent="WARNING",
+            note=(
+                "Symbol 'AAPL' contains no parseable YYMMDD expiry; hook must skip it silently "
+                "rather than raising an error or issuing a spurious warning."
+            ),
+        ),
+
+        # Non-watched tool: tool_name not in WATCHED_TOOLS → ALLOW
+        TestDTE(
+            name="tt-require-dte / non-watched tool → ALLOW (tool bypassed)",
+            payload_fn=lambda: {
+                "tool_name": "get_positions",
+                "tool_input": {
+                    "legs": [
+                        {
+                            "instrument-type": "Equity Option",
+                            "symbol": _occ_symbol("AAPL", _date.today() + timedelta(days=5)),
+                            "action": "Sell to Open",
+                            "quantity": 1,
+                        }
+                    ]
+                },
+            },
+            hook="tt-require-dte",
+            expected_exit=0,
+            stdout_absent="WARNING",
+            note=(
+                "tool_name='get_positions' is not in WATCHED_TOOLS; hook must exit 0 immediately "
+                "without inspecting the legs."
+            ),
+        ),
+
+        # Invalid env var value: non-integer TT_DTE_WARN_THRESHOLD → falls back to 21
+        TestDTE(
+            name="tt-require-dte / invalid TT_DTE_WARN_THRESHOLD → fallback to 21, WARN at 21 DTE",
+            payload_fn=lambda: _dte_order(
+                _occ_symbol("AAPL", _date.today() + timedelta(days=21)),
+                instrument_type="Equity Option",
+                action="Sell to Open",
+            ),
+            hook="tt-require-dte",
+            expected_exit=1,
+            env={"TT_DTE_WARN_THRESHOLD": "not-a-number"},
+            stdout_contains="WARNING",
+            note=(
+                "TT_DTE_WARN_THRESHOLD='not-a-number' is invalid; hook must log a fallback "
+                "message to stderr and use the default threshold of 21 DTE, then warn on a "
+                "21-DTE STO option."
             ),
         ),
     ]
