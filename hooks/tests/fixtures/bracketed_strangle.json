@@ -1,0 +1,66 @@
+{
+  "_comment": "Scenario: short SPY strangle with valid OTOCO bracket. Credit = $5.50. Profit target = $2.75 (50%). Stop = $11.00 (2x). tt-require-bracket must ALLOW (exit 0). tt-concentration-cap must ALLOW (exit 0) when within limits. tt-require-plan must ALLOW (exit 0) when plan file exists.",
+  "tool_name": "create_complex_order",
+  "tool_input": {
+    "type": "OTOCO",
+    "trigger-order": {
+      "time-in-force": "Day",
+      "order-type": "Limit",
+      "price": 5.50,
+      "legs": [
+        {
+          "instrument-type": "Equity Option",
+          "symbol": "SPY 260619C00580000",
+          "action": "Sell to Open",
+          "quantity": 1
+        },
+        {
+          "instrument-type": "Equity Option",
+          "symbol": "SPY 260619P00520000",
+          "action": "Sell to Open",
+          "quantity": 1
+        }
+      ]
+    },
+    "orders": [
+      {
+        "time-in-force": "GTC",
+        "order-type": "Limit",
+        "price": -2.75,
+        "legs": [
+          {
+            "instrument-type": "Equity Option",
+            "symbol": "SPY 260619C00580000",
+            "action": "Buy to Close",
+            "quantity": 1
+          },
+          {
+            "instrument-type": "Equity Option",
+            "symbol": "SPY 260619P00520000",
+            "action": "Buy to Close",
+            "quantity": 1
+          }
+        ]
+      },
+      {
+        "time-in-force": "GTC",
+        "order-type": "Limit",
+        "price": -11.00,
+        "legs": [
+          {
+            "instrument-type": "Equity Option",
+            "symbol": "SPY 260619C00580000",
+            "action": "Buy to Close",
+            "quantity": 1
+          },
+          {
+            "instrument-type": "Equity Option",
+            "symbol": "SPY 260619P00520000",
+            "action": "Buy to Close",
+            "quantity": 1
+          }
+        ]
+      }
+    ]
+  }
+}

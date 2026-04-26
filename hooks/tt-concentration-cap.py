@@ -153,10 +153,26 @@ def get_opening_exposure(order):
     Estimate per-underlying notional for OPENING legs only.
     Closing legs (BTC/STC) are ignored — they reduce risk, not add it.
     Exposure = |price| x max_opening_qty_per_underlying x multiplier.
+
+    For OTOCO orders the opening legs live under trigger-order.legs, not at
+    the top-level legs key.  The child orders[] array holds closing bracket
+    legs and must NOT be counted as new opening exposure.  The net credit /
+    debit price for OTOCO orders is also in trigger-order.price, not the
+    top-level price field.
     """
+    trigger = order.get("trigger-order", {})
+    is_otoco = bool(trigger)
+
     legs = list(order.get("legs", []))
-    for sub in order.get("orders", []):
-        legs.extend(sub.get("legs", []))
+    if is_otoco:
+        # OTOCO: opening legs are in trigger-order only.  The child orders[]
+        # array contains bracket closing legs (BTC/STC) and must be excluded
+        # to avoid double-counting or misclassifying closing legs as opening.
+        legs.extend(trigger.get("legs", []))
+    else:
+        # Plain multi-leg or OCO complex order: collect all sub-order legs.
+        for sub in order.get("orders", []):
+            legs.extend(sub.get("legs", []))
 
     opening_legs = [
         leg for leg in legs
@@ -165,7 +181,12 @@ def get_opening_exposure(order):
     if not opening_legs:
         return {}
 
-    price = abs(_safe_float(order.get("price")) or 0)
+    # For OTOCO orders the price lives in trigger-order, not the top level.
+    price = abs(
+        _safe_float(order.get("price"))
+        or _safe_float(trigger.get("price"))
+        or 0
+    )
     per_underlying = {}
 
     for leg in opening_legs:

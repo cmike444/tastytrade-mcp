@@ -1,0 +1,17 @@
+{
+  "_comment": "Scenario: single naked Sell-to-Open call — no OTOCO bracket. tt-require-bracket must BLOCK (exit 2). tt-concentration-cap does not fire (create_order). tt-require-plan must BLOCK when no plan file is present.",
+  "tool_name": "create_order",
+  "tool_input": {
+    "time-in-force": "Day",
+    "order-type": "Limit",
+    "price": 3.50,
+    "legs": [
+      {
+        "instrument-type": "Equity Option",
+        "symbol": "AAPL 260619C00200000",
+        "action": "Sell to Open",
+        "quantity": 1
+      }
+    ]
+  }
+}

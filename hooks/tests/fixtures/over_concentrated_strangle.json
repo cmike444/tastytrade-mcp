@@ -1,0 +1,66 @@
+{
+  "_comment": "Scenario: OTOCO strangle that exceeds the 25% concentration cap. With netliq=$10000 and existing SPY exposure=$2300, adding $5.50*1*100=$550 reaches $2850 which exceeds the $2500 cap. tt-concentration-cap must BLOCK (exit 2). Used to verify the OTOCO trigger-order legs are correctly read by the concentration-cap hook.",
+  "tool_name": "create_complex_order",
+  "tool_input": {
+    "type": "OTOCO",
+    "trigger-order": {
+      "time-in-force": "Day",
+      "order-type": "Limit",
+      "price": 5.50,
+      "legs": [
+        {
+          "instrument-type": "Equity Option",
+          "symbol": "SPY 260619C00590000",
+          "action": "Sell to Open",
+          "quantity": 1
+        },
+        {
+          "instrument-type": "Equity Option",
+          "symbol": "SPY 260619P00510000",
+          "action": "Sell to Open",
+          "quantity": 1
+        }
+      ]
+    },
+    "orders": [
+      {
+        "time-in-force": "GTC",
+        "order-type": "Limit",
+        "price": -2.75,
+        "legs": [
+          {
+            "instrument-type": "Equity Option",
+            "symbol": "SPY 260619C00590000",
+            "action": "Buy to Close",
+            "quantity": 1
+          },
+          {
+            "instrument-type": "Equity Option",
+            "symbol": "SPY 260619P00510000",
+            "action": "Buy to Close",
+            "quantity": 1
+          }
+        ]
+      },
+      {
+        "time-in-force": "GTC",
+        "order-type": "Limit",
+        "price": -11.00,
+        "legs": [
+          {
+            "instrument-type": "Equity Option",
+            "symbol": "SPY 260619C00590000",
+            "action": "Buy to Close",
+            "quantity": 1
+          },
+          {
+            "instrument-type": "Equity Option",
+            "symbol": "SPY 260619P00510000",
+            "action": "Buy to Close",
+            "quantity": 1
+          }
+        ]
+      }
+    ]
+  }
+}

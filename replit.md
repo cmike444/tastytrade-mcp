@@ -112,6 +112,7 @@ The server automatically authenticates with TastyTrade on startup using stored s
 - **Port**: 5000
 
 ## Recent Changes
+- 2026-04-26: Added hooks/tests/ — integration test suite for pre-trade enforcement hooks with real-shaped TastyTrade order JSON fixtures (naked_short, bracketed_strangle, put_spread, futures_option_otoco, over_concentrated_strangle). Fixed two bugs in tt-concentration-cap.py: (1) OTOCO trigger-order.legs were not read for opening exposure, (2) OTOCO trigger-order.price was not read for notional calculation — both caused OTOCO orders to silently bypass the 25% concentration cap.
 - 2026-02-22: Server-side credential storage - TastyTrade credentials auto-loaded from Replit secrets on startup, removed authenticate_oauth tool to prevent credential exposure through chat
 - 2026-02-22: Added OAuth 2.1 authorization server for ChatGPT compatibility (PKCE, DCR, discovery endpoints)
 - 2026-02-20: Added dual transport (stdio + Streamable HTTP) with bearer token auth

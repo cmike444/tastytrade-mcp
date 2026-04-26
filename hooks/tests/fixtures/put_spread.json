@@ -1,0 +1,23 @@
+{
+  "_comment": "Scenario: defined-risk credit put spread (STO 520P + BTO 515P). BTO qty equals STO qty — not naked. tt-require-bracket must ALLOW (exit 0). tt-concentration-cap must ALLOW (exit 0) when within limits. tt-require-plan must ALLOW (exit 0) when plan file exists.",
+  "tool_name": "create_complex_order",
+  "tool_input": {
+    "time-in-force": "Day",
+    "order-type": "Limit",
+    "price": 1.50,
+    "legs": [
+      {
+        "instrument-type": "Equity Option",
+        "symbol": "SPY 260619P00520000",
+        "action": "Sell to Open",
+        "quantity": 1
+      },
+      {
+        "instrument-type": "Equity Option",
+        "symbol": "SPY 260619P00515000",
+        "action": "Buy to Open",
+        "quantity": 1
+      }
+    ]
+  }
+}

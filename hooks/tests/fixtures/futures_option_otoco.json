@@ -1,0 +1,66 @@
+{
+  "_comment": "Scenario: /ES futures-option short strangle (Future Option instrument-type) with OTOCO bracket. Credit = $25.00. Profit target = $12.50 (50%). Stop = $50.00 (2x). Verifies that 'Future Option' instrument-type is recognised as an option by the hooks. tt-require-bracket must ALLOW (exit 0). tt-concentration-cap must ALLOW (exit 0) when within limits. tt-require-plan must ALLOW (exit 0) when plan file exists.",
+  "tool_name": "create_complex_order",
+  "tool_input": {
+    "type": "OTOCO",
+    "trigger-order": {
+      "time-in-force": "Day",
+      "order-type": "Limit",
+      "price": 25.00,
+      "legs": [
+        {
+          "instrument-type": "Future Option",
+          "symbol": "./ESM6 EW1M6 260619C5400",
+          "action": "Sell to Open",
+          "quantity": 1
+        },
+        {
+          "instrument-type": "Future Option",
+          "symbol": "./ESM6 EW1M6 260619P5200",
+          "action": "Sell to Open",
+          "quantity": 1
+        }
+      ]
+    },
+    "orders": [
+      {
+        "time-in-force": "GTC",
+        "order-type": "Limit",
+        "price": -12.50,
+        "legs": [
+          {
+            "instrument-type": "Future Option",
+            "symbol": "./ESM6 EW1M6 260619C5400",
+            "action": "Buy to Close",
+            "quantity": 1
+          },
+          {
+            "instrument-type": "Future Option",
+            "symbol": "./ESM6 EW1M6 260619P5200",
+            "action": "Buy to Close",
+            "quantity": 1
+          }
+        ]
+      },
+      {
+        "time-in-force": "GTC",
+        "order-type": "Limit",
+        "price": -50.00,
+        "legs": [
+          {
+            "instrument-type": "Future Option",
+            "symbol": "./ESM6 EW1M6 260619C5400",
+            "action": "Buy to Close",
+            "quantity": 1
+          },
+          {
+            "instrument-type": "Future Option",
+            "symbol": "./ESM6 EW1M6 260619P5200",
+            "action": "Buy to Close",
+            "quantity": 1
+          }
+        ]
+      }
+    ]
+  }
+}
