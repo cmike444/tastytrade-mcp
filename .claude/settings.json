@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "get_market_metrics",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/tt-populate-earnings-dates.py"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "create_order|create_complex_order",
