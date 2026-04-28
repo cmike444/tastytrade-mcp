@@ -169,7 +169,7 @@ Hooks in `~/.claude/hooks/` fire automatically after MCP calls and inject comput
 | `get_transactions` | `tt-0dte-circuit-breaker.py` | 0DTE daily P&L vs $250 limit; weekly P&L vs $1,500 limit; ⛔ block or ✅ clear signal |
 | `get_transactions` | `tt-pnl-tracker.py` | Current/prior month realized P&L; YTD P&L; implied annualized return; withdrawal eligibility |
 | `get_account_balances` / `get_net_liq_value` | `tt-growth-phase.py` | Growth plan phase (1–4); withdrawal rate; years to next milestone; on-track vs behind; 5% position limit in dollars |
-| `get_positions` | `tt-loss-monitor.py` | Per-position unrealized P&L as % of net liq; ⛔ flags for >5% violations; ⚠️ warnings for 2–5% |
+| `get_positions` | `tt-loss-monitor.py` | Position-level unrealized P&L as % of net liq (legs grouped by underlying root); ⛔ flags for >5% violations; ⚠️ warnings for 2–5% |
 
 **Call order matters for accuracy:**
 1. Call `get_account_balances` before `get_positions` — the growth phase hook writes net liq to `/tmp/tt_netliq.json` which the loss monitor reads for % calculations
@@ -177,6 +177,38 @@ Hooks in `~/.claude/hooks/` fire automatically after MCP calls and inject comput
 3. Use `get_candles` with enough `daysBack` for the momentum windows you need (252d for 1y TSMOM)
 
 **When hooks are not installed:** compute these manually using the scripts in `scripts/` or inline Python.
+
+---
+
+## Position-Level Stop Rules (2x / 1.5x Net Credit)
+
+**Never evaluate a stop threshold against an individual leg or option contract.** Stops apply to the combined unrealized P&L of all legs that share the same underlying root.
+
+### Grouping rule
+- All legs of a strangle, straddle, iron condor, iron butterfly, or vertical spread on the **same underlying** form one position group.
+- Strip the option suffix to find the root: `SPY 241220P00450000` → `SPY`; `./GCZ5 GC1Z5 241220C02000` → `/GC`.
+- Sum `unrealized_pnl` across every leg in the group to get the position-level P&L used for stop checks.
+
+### Net credit baseline (includes rolls)
+- The stop trigger is calculated from the **net credit collected for the position**, not from any single leg's open price.
+- Net credit = sum of `net-value` across all Trade and Receive-Deliver transactions for the same underlying root over the last 90 days. A roll that collected additional credit increases the baseline; a debit roll decreases it.
+- The `loss_monitor` entries in the bundle carry a `net_credit` field (null if no transaction history is available) that already reflects this 90-day cumulative figure.
+
+### Stop thresholds
+| Strategy | Stop trigger |
+|---|---|
+| Strangle, Iron Condor | 2× net credit collected |
+| Straddle, Iron Butterfly | 1.5× net credit collected |
+| 0DTE (expires today) | Time-based close — no dollar stop enforced |
+
+### Warning format
+Always express stop proximity at the position level:
+```
+[UNDERLYING] [strategy] at [X]% of 2× stop ($[current_loss] loss vs $[trigger] trigger)
+```
+Example: `SPY strangle at 71% of 2× stop ($142 loss vs $200 trigger)`
+
+Never write: "SPY 450P is approaching its 2× stop" — that is per-leg language and is incorrect.
 
 ---
 

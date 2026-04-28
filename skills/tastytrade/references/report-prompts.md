@@ -45,7 +45,7 @@ Generate the morning brief in this structure:
 1. **Account Status** — net liq, buying power, position count, any loss monitor flags
 2. **Overnight Futures** — for each contract in futures_snapshot show last price, change and change_pct; summarise overnight direction (risk-on/risk-off) and key levels; note "data unavailable" for any null fields
 3. **Volatility Regime** — classify overall market (CALM/ELEVATED/STRESS) based on regime_summary
-4. **Position Review** — table of all open positions with unrealized P&L; flag any breaches
+4. **Position Review** — table of all open positions with unrealized P&L; flag any breaches. **Stop proximity is position-level only**: each entry in `loss_monitor.warnings` and `loss_monitor.breaches` already aggregates all legs of the same underlying — report at that level. If `net_credit` is present, show the 2× stop trigger (2× net_credit for strangles/condors, 1.5× for straddles/butterflies) and the current unrealized loss as a percentage of that trigger. Never flag an individual leg or option contract in isolation.
 5. **Top Opportunities** — underlyings with ivr > 40 and vrp > 3 (IV selling candidates)
 6. **Action Items** — concrete steps for the trading day based on the above
 
@@ -82,7 +82,7 @@ and delta are refreshed. Position structure (symbol/strikes/expiry/quantity) com
 bundle. Positions opened or closed after the morning run may not appear — check meta.delta_compression_note.
 
 Generate the open brief:
-1. **Opening Conditions** — net liq vs morning, any immediate loss monitor flags
+1. **Opening Conditions** — net liq vs morning, any immediate loss monitor flags. **Stop proximity is position-level only**: `loss_monitor` entries aggregate all legs per underlying — never flag individual contracts. Use `net_credit` (if present) to show the 2× stop trigger dollar amount alongside the current loss.
 2. **Circuit Breaker Check** — if daily_0dte_circuit_breaker or weekly_circuit_breaker is true,
    lead with a ⛔ WARNING and recommend no new positions
 3. **Futures at Open** — for each entry in futures_snapshot show last price, change and change_pct;
@@ -120,7 +120,7 @@ Check meta.delta_compression_note for details on what may be stale.
 
 Generate the noon check:
 1. **Midday P&L Summary** — daily realized + unrealized overview
-2. **Loss Monitor** — any positions near or past thresholds (flag breaches immediately)
+2. **Loss Monitor** — any positions near or past thresholds (flag breaches immediately). **Stop proximity is position-level only**: each `loss_monitor` entry already sums all legs of the same underlying — report the combined P&L, never per-leg. If `net_credit` is non-null, display the 2× stop trigger (2× net_credit for strangles/condors, 1.5× for straddles/butterflies) and what percentage of that trigger has been reached.
 3. **Position Decay Check** — theta positions: are they tracking expected daily decay?
 4. **Vol Regime Mid-Day** — any intraday vol spikes or collapses vs morning
 5. **Afternoon Plan** — recommended actions before close based on current state
@@ -159,8 +159,7 @@ Generate the pre-close brief:
 2. **0DTE Positions** — if zero_dte_flag is true, list all zero_dte_positions and recommend
    close/roll/let-expire decision for each based on current unrealized_pnl
 3. **P&L Projection** — daily realized + unrealized snapshot; on-track vs off-track
-4. **Close or Hold Decisions** — for each position approaching max profit (>50% of credit),
-   recommend close; for positions in trouble, recommend action
+4. **Close or Hold Decisions** — for each position approaching max profit (>50% of credit), recommend close; for positions in trouble, recommend action. **Stop proximity is position-level only**: evaluate the 2× stop trigger against the combined unrealized P&L of all legs on the same underlying (from `loss_monitor`). If `net_credit` is present, show `$current_loss vs $trigger (2× net_credit)`. Never assess stop proximity on a single leg.
 5. **Overnight Risk** — any earnings or dividends in next 24h (from earnings_next_date / dividend_next_date; earnings_date is an alias for the same value)
 6. **End-of-Day Checklist** — 5 concrete action items before 4:00 PM
 
@@ -194,7 +193,7 @@ Position structure from morning bundle; price/P&L/delta refreshed at EOD run tim
 
 Generate the end-of-day report:
 1. **Day Summary** — realized P&L for the day, week-to-date, month-to-date
-2. **Portfolio State** — remaining open positions, net delta exposure, key risk underlyings
+2. **Portfolio State** — remaining open positions, net delta exposure, key risk underlyings. For any position flagged in `loss_monitor`, report stop proximity at the position level (combined P&L of all legs on the same underlying). Use `net_credit` where present: trigger = 2× net_credit (strangles/condors) or 1.5× net_credit (straddles/butterflies). Never cite a per-leg stop figure.
 3. **Growth Plan Check** — compare net_liq to target milestones (Phase 1: $25k, Phase 2: $50k,
    Phase 3: $100k, Phase 4: $250k); state current phase and % to next milestone
 4. **Lessons & Observations** — what worked, what to watch overnight
@@ -241,7 +240,7 @@ Call the `read_daily_bundle` tool with `report: weekend` to load the pre-fetched
 
 Generate the weekend review:
 1. **Week in Review** — weekly_realized_pnl, key wins/losses from positions
-2. **Portfolio Health** — current open positions: theta exposure, unrealized P&L, key risks
+2. **Portfolio Health** — current open positions: theta exposure, unrealized P&L, key risks. For any position in `loss_monitor.warnings` or `loss_monitor.breaches`, report stop proximity at the position level (combined P&L across all legs on the same underlying). If `net_credit` is non-null, show the 2× stop trigger (2× net_credit for strangles/condors, 1.5× for straddles/butterflies) and the percentage reached. Never flag a single leg in isolation.
 3. **Volatility Landscape** — from full_watchlist_metrics: how many symbols in CALM/ELEVATED/STRESS?
    Which have highest VRP (selling edge)?
 4. **Top Trade Candidates** — analyze top_candidates_by_ivr; for each, describe strategy
@@ -297,6 +296,12 @@ All bundles share these common fields:
 | `pnl.daily_0dte_circuit_breaker` | bool | true if daily P&L < -$250 |
 | `pnl.weekly_circuit_breaker` | bool | true if weekly P&L < -$1,500 |
 | `loss_monitor.circuit_breaker` | bool | true if any position lost >5% of net liq |
+| `loss_monitor.breaches[].symbol` | string | underlying root (e.g. SPY, /GC) — all legs grouped |
+| `loss_monitor.breaches[].legs` | list | individual OCC/futures symbols that make up this position group |
+| `loss_monitor.breaches[].unrealized_pnl` | float | combined unrealized P&L across all legs ($) |
+| `loss_monitor.breaches[].net_credit` | float\|null | cumulative net credit collected for this underlying in last 90 days (null if no transaction data); use as stop baseline |
+| `loss_monitor.breaches[].pct_netliq` | float | combined P&L as % of account net liq |
+| `loss_monitor.warnings[]` | list | same schema as breaches; position lost 2–5% of net liq |
 | `futures_snapshot[].product` | string | root product code: /ES, /NQ, /CL, /GC, /SI, /ZN, /6E |
 | `futures_snapshot[].last` | float\|null | last traded price for front contract |
 | `futures_snapshot[].change` | float\|null | price change vs prior session |

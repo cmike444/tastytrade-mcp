@@ -327,28 +327,112 @@ def compute_regime(iv30: Optional[float], ivr: Optional[float]) -> str:
         return "STRESS"
 
 
-def compute_loss_monitor(positions: list, net_liq: float) -> dict:
+def _position_underlying_root(pos: dict) -> str:
     """
-    Check per-position unrealized P&L drawdown flags.
-    Returns dict with flags list and any breach info.
+    Return the underlying root for a position dict.
+    Checks both compact-bundle field name ('underlying') and raw API field name
+    ('underlying-symbol') so this works regardless of which format is passed.
+    Falls back to splitting the OCC symbol on whitespace to strip the option suffix.
     """
+    root = pos.get("underlying") or pos.get("underlying-symbol") or ""
+    if root:
+        return root.strip()
+    symbol = pos.get("symbol") or ""
+    return symbol.split()[0] if symbol else ""
+
+
+def compute_net_credit_by_root(transactions: list, lookback_days: int = 90) -> dict:
+    """
+    Compute cumulative net credit received per underlying root over the last
+    `lookback_days` calendar days.  Covers initial entries and rolls.
+    Returns dict mapping root -> net_credit (positive = net credit received).
+    """
+    since = date.today() - timedelta(days=lookback_days)
+    credits: dict = {}
+    for tx in transactions:
+        tx_type = tx.get("transaction-type", "")
+        if tx_type not in ("Trade", "Receive Deliver"):
+            continue
+        value = tx.get("net-value") or tx.get("value") or 0
+        try:
+            pnl = float(value)
+        except (ValueError, TypeError):
+            continue
+        dt_str = tx.get("executed-at") or tx.get("transaction-date", "")
+        try:
+            dt = datetime.fromisoformat(str(dt_str).replace("Z", "+00:00")).date()
+        except Exception:
+            continue
+        if dt < since:
+            continue
+        sym = tx.get("underlying-symbol") or tx.get("symbol") or ""
+        root = sym.split()[0] if sym else ""
+        if root:
+            credits[root] = credits.get(root, 0.0) + pnl
+    return credits
+
+
+def compute_loss_monitor(positions: list, net_liq: float, transactions: list = None) -> dict:
+    """
+    Check position-level unrealized P&L drawdown flags.
+
+    Legs are grouped by underlying root (e.g. both legs of a put spread, all
+    four legs of an iron condor) so that stop thresholds are evaluated against
+    the *combined* position P&L rather than individual legs.
+
+    When `transactions` are supplied, the cumulative net credit collected for
+    each underlying (including any rolls within the last 90 days) is surfaced
+    as `net_credit` on each entry so the agent can compute the exact 2x stop
+    trigger dollar amount.
+
+    Returns dict with breach/warning lists and circuit_breaker flag.
+    """
+    if transactions is None:
+        transactions = []
+
+    net_credits = compute_net_credit_by_root(transactions) if transactions else {}
+
+    groups: dict = {}
+    for pos in positions:
+        root = _position_underlying_root(pos)
+        if not root:
+            continue
+        symbol = pos.get("symbol") or root
+        upnl_raw = pos.get("unrealized-day-gain") or pos.get("unrealized_pnl") or 0
+        try:
+            upnl = float(upnl_raw)
+        except (ValueError, TypeError):
+            upnl = 0.0
+        if root not in groups:
+            groups[root] = {"legs": [], "total_upnl": 0.0}
+        if symbol not in groups[root]["legs"]:
+            groups[root]["legs"].append(symbol)
+        groups[root]["total_upnl"] += upnl
+
     flags = []
     warnings = []
 
-    for pos in positions:
-        symbol = pos.get("symbol") or pos.get("underlying-symbol", "")
-        upnl = pos.get("unrealized-day-gain") or pos.get("unrealized_pnl") or 0
-        try:
-            upnl = float(upnl)
-        except (ValueError, TypeError):
-            continue
+    for root, grp in groups.items():
+        total_upnl = grp["total_upnl"]
+        net_credit = net_credits.get(root)
+
+        entry = {
+            "symbol": root,
+            "legs": grp["legs"],
+            "unrealized_pnl": round(total_upnl, 2),
+            "net_credit": round(net_credit, 2) if net_credit is not None else None,
+        }
 
         if net_liq > 0:
-            pct = (upnl / net_liq) * 100
+            pct = (total_upnl / net_liq) * 100
+            entry["pct_netliq"] = round(pct, 2)
+
             if pct < -5:
-                flags.append({"symbol": symbol, "unrealized_pnl": upnl, "pct_netliq": round(pct, 2), "level": "BREACH"})
+                entry["level"] = "BREACH"
+                flags.append(entry)
             elif pct < -2:
-                warnings.append({"symbol": symbol, "unrealized_pnl": upnl, "pct_netliq": round(pct, 2), "level": "WARNING"})
+                entry["level"] = "WARNING"
+                warnings.append(entry)
 
     return {
         "breach_count": len(flags),
@@ -848,9 +932,13 @@ def fetch_morning(session: TastyTradeSession) -> dict:
     print("  Fetching futures quotes...")
     futures_snapshot = fetch_futures_quotes(session)
 
-    print("  Fetching transactions for P&L (past 7 days)...")
-    txns = fetch_transactions_recent(session, days=7)
+    print("  Fetching transactions for P&L + net credit history (past 90 days)...")
+    txns = fetch_transactions_recent(session, days=90)
     pnl_summary = compute_daily_pnl_from_transactions(txns)
+
+    positions = account.get("positions", [])
+    net_liq = account.get("net_liq", 0)
+    loss_mon = compute_loss_monitor(positions, net_liq, txns)
 
     calendar_alerts = account.get("calendar_alerts", [])
     if calendar_alerts:
@@ -868,9 +956,9 @@ def fetch_morning(session: TastyTradeSession) -> dict:
             "buying_power": account.get("buying_power"),
             "cash_balance": account.get("cash_balance"),
         },
-        "positions": account.get("positions", []),
+        "positions": positions,
         "live_orders": account.get("live_orders", []),
-        "loss_monitor": account.get("loss_monitor", {}),
+        "loss_monitor": loss_mon,
         "market_metrics": metrics,
         "regime_summary": regime_summary,
         "futures_snapshot": futures_snapshot,
@@ -917,9 +1005,13 @@ def fetch_weekend(session: TastyTradeSession) -> dict:
         else:
             candidate["hv21_pct"] = None
 
-    print("  Fetching weekly transactions (past 7 days)...")
-    txns = fetch_transactions_recent(session, days=7)
+    print("  Fetching transactions for P&L + net credit history (past 90 days)...")
+    txns = fetch_transactions_recent(session, days=90)
     pnl_summary = compute_daily_pnl_from_transactions(txns)
+
+    positions = account.get("positions", [])
+    net_liq = account.get("net_liq", 0)
+    loss_mon = compute_loss_monitor(positions, net_liq, txns)
 
     print("  Fetching futures quotes...")
     futures_snapshot = fetch_futures_quotes(session)
@@ -932,8 +1024,8 @@ def fetch_weekend(session: TastyTradeSession) -> dict:
             "buying_power": account.get("buying_power"),
             "cash_balance": account.get("cash_balance"),
         },
-        "positions": account.get("positions", []),
-        "loss_monitor": account.get("loss_monitor", {}),
+        "positions": positions,
+        "loss_monitor": loss_mon,
         "full_watchlist_metrics": metrics,
         "top_candidates_by_ivr": top_candidates,
         "pnl": pnl_summary,
@@ -1024,11 +1116,11 @@ def fetch_intraday(session: TastyTradeSession, report_type: str, output_dir: str
     print(f"  Refreshing metrics + FF for {len(active_syms)} underlyings...")
     metrics = fetch_market_metrics(session, active_syms) if active_syms else []
 
-    loss_mon = compute_loss_monitor(positions, net_liq)
-
-    print("  Fetching today's transactions...")
-    txns = fetch_transactions_recent(session, days=1)
+    print("  Fetching transactions for P&L + net credit history (past 90 days)...")
+    txns = fetch_transactions_recent(session, days=90)
     pnl_summary = compute_daily_pnl_from_transactions(txns)
+
+    loss_mon = compute_loss_monitor(positions, net_liq, txns)
 
     futures_snapshot = None
     if report_type == "open":
