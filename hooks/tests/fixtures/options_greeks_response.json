@@ -1,0 +1,18 @@
+{
+  "_comment": "PostToolUse fixture for tt-fetch-earnings-straddle. Simulates get_options_greeks response for AAPL (ATM ~$200) and SPY (ATM ~$540). AAPL has three strikes (195/200/205) with deltas so the hook picks $200 as ATM (call delta=0.52). Straddle at $200: call_mark=5.90, put_mark=5.70 → straddle=11.60. stock_price (put-call parity) = 200 + 5.90 − 5.70 = 200.20; implied_move = 11.60/200.20 ≈ 0.05794. SPY has one strike (540): call_mark=4.20, put_mark=4.00 → straddle=8.20. stock_price = 540 + 4.20 − 4.00 = 540.20; implied_move = 8.20/540.20 ≈ 0.01518.",
+  "tool_name": "get_options_greeks",
+  "tool_input": {
+    "symbols": [
+      ".AAPL260516C00195000", ".AAPL260516P00195000",
+      ".AAPL260516C00200000", ".AAPL260516P00200000",
+      ".AAPL260516C00205000", ".AAPL260516P00205000",
+      ".SPY260516C00540000",  ".SPY260516P00540000"
+    ]
+  },
+  "tool_response": [
+    {
+      "type": "text",
+      "text": "{\"data\": {\"items\": [{\"symbol\": \".AAPL260516C00195000\", \"underlying-symbol\": \"AAPL\", \"option-type\": \"C\", \"strike-price\": \"195.0\", \"bid\": 8.80, \"ask\": 9.20, \"mark\": 9.00, \"delta\": 0.62, \"gamma\": 0.03, \"theta\": -0.12, \"vega\": 0.18, \"implied-volatility\": 0.32}, {\"symbol\": \".AAPL260516P00195000\", \"underlying-symbol\": \"AAPL\", \"option-type\": \"P\", \"strike-price\": \"195.0\", \"bid\": 3.30, \"ask\": 3.70, \"mark\": 3.50, \"delta\": -0.38, \"gamma\": 0.03, \"theta\": -0.10, \"vega\": 0.18, \"implied-volatility\": 0.31}, {\"symbol\": \".AAPL260516C00200000\", \"underlying-symbol\": \"AAPL\", \"option-type\": \"C\", \"strike-price\": \"200.0\", \"bid\": 5.70, \"ask\": 6.10, \"mark\": 5.90, \"delta\": 0.52, \"gamma\": 0.04, \"theta\": -0.14, \"vega\": 0.20, \"implied-volatility\": 0.30}, {\"symbol\": \".AAPL260516P00200000\", \"underlying-symbol\": \"AAPL\", \"option-type\": \"P\", \"strike-price\": \"200.0\", \"bid\": 5.50, \"ask\": 5.90, \"mark\": 5.70, \"delta\": -0.48, \"gamma\": 0.04, \"theta\": -0.13, \"vega\": 0.20, \"implied-volatility\": 0.30}, {\"symbol\": \".AAPL260516C00205000\", \"underlying-symbol\": \"AAPL\", \"option-type\": \"C\", \"strike-price\": \"205.0\", \"bid\": 3.10, \"ask\": 3.50, \"mark\": 3.30, \"delta\": 0.38, \"gamma\": 0.03, \"theta\": -0.12, \"vega\": 0.18, \"implied-volatility\": 0.31}, {\"symbol\": \".AAPL260516P00205000\", \"underlying-symbol\": \"AAPL\", \"option-type\": \"P\", \"strike-price\": \"205.0\", \"bid\": 7.90, \"ask\": 8.30, \"mark\": 8.10, \"delta\": -0.62, \"gamma\": 0.03, \"theta\": -0.11, \"vega\": 0.18, \"implied-volatility\": 0.32}, {\"symbol\": \".SPY260516C00540000\", \"underlying-symbol\": \"SPY\", \"option-type\": \"C\", \"strike-price\": \"540.0\", \"bid\": 4.00, \"ask\": 4.40, \"mark\": 4.20, \"delta\": 0.52, \"gamma\": 0.02, \"theta\": -0.10, \"vega\": 0.22, \"implied-volatility\": 0.18}, {\"symbol\": \".SPY260516P00540000\", \"underlying-symbol\": \"SPY\", \"option-type\": \"P\", \"strike-price\": \"540.0\", \"bid\": 3.80, \"ask\": 4.20, \"mark\": 4.00, \"delta\": -0.48, \"gamma\": 0.02, \"theta\": -0.09, \"vega\": 0.22, \"implied-volatility\": 0.18}]}}"
+    }
+  ]
+}

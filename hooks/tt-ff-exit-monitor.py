@@ -27,6 +27,7 @@ import json
 import math
 import os
 import re
+import subprocess
 import sys
 from datetime import date
 
@@ -34,9 +35,13 @@ WATCHED_TOOLS = {"get_market_metrics"}
 POSITIONS_FILE = "/tmp/tt_positions.json"
 
 # Sidecar file: maps SYMBOL → earnings implied move fraction (straddle/stock).
-# Written by the user or a prefetch script before get_market_metrics is called.
+# Auto-populated by tt-fetch-earnings-straddle.py (PostToolUse on get_options_greeks)
+# or written manually before get_market_metrics is called.
 # Example: {"AAPL": 0.05, "SPY": 0.02}
 EARNINGS_MOVES_FILE = "/tmp/tt_earnings_moves.json"
+
+# Companion script that can auto-fetch straddle data from the TastyTrade API.
+_STRADDLE_HOOK = os.path.join(os.path.dirname(__file__), "tt-fetch-earnings-straddle.py")
 
 # Maximum days difference allowed when matching a calendar expiry to a term
 # structure entry that does not fall exactly on that expiry.
@@ -382,6 +387,43 @@ def find_iv_for_expiry(term_structure, target_date):
 
 
 # ---------------------------------------------------------------------------
+# Auto-prefetch straddle price via companion script
+# ---------------------------------------------------------------------------
+
+def _try_prefetch_straddle(underlying, expiry):
+    """
+    Invoke tt-fetch-earnings-straddle.py --fetch UNDERLYING EXPIRY in a
+    subprocess to auto-populate /tmp/tt_earnings_moves.json when the sidecar
+    is missing for an underlying that has earnings in the calendar window.
+
+    ``expiry`` should be the expiry that *contains* the earnings date:
+      - earn_in_front  → front_expiry
+      - earn_in_back   → back_expiry
+
+    Returns the fetched implied_move float on success, or None on failure.
+    The failure path is silent (the monitor falls back to advisory-only).
+    """
+    hook_path = os.environ.get("TT_STRADDLE_HOOK", _STRADDLE_HOOK)
+    if not os.path.exists(hook_path):
+        return None
+    expiry_str = expiry.isoformat()
+    try:
+        result = subprocess.run(
+            [sys.executable, hook_path, "--fetch", underlying, expiry_str],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode == 0:
+            # Reload sidecar to pick up the freshly written value
+            fresh = load_earnings_moves()
+            return fresh.get(underlying)
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -470,7 +512,22 @@ def main():
         # expiry window contains the earnings event, then recompute FF.
         # Formula: IV_exearn² × T = IV_raw² × T − implied_move²
         # ------------------------------------------------------------------
-        implied_move = earnings_moves.get(underlying) if (earn_in_front or earn_in_back) else None
+        implied_move = None
+        if earn_in_front or earn_in_back:
+            implied_move = earnings_moves.get(underlying)
+            if implied_move is None:
+                # Sidecar is absent for this underlying — try to auto-fetch
+                # the ATM straddle price via the companion prefetch script
+                # (uses TastyTrade REST API + session cache).  Pass the expiry
+                # that *contains* the earnings event so the API selects the
+                # correct option chain: front_expiry for earn_in_front,
+                # back_expiry for earn_in_back.
+                earnings_expiry = back_expiry if earn_in_back else front_expiry
+                implied_move = _try_prefetch_straddle(underlying, earnings_expiry)
+                if implied_move is not None:
+                    # Refresh the in-memory dict so subsequent calendars on
+                    # the same underlying don't re-fetch.
+                    earnings_moves[underlying] = implied_move
         ff_exearn = None
         fwd_vol_exearn = None
         iv_front_exearn = iv_front

@@ -28,17 +28,19 @@ HOOKS_DIR = Path(__file__).parent.parent
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 HOOKS = {
-    "tt-require-bracket":        str(HOOKS_DIR / "tt-require-bracket.py"),
-    "tt-concentration-cap":      str(HOOKS_DIR / "tt-concentration-cap.py"),
-    "tt-require-plan":           str(HOOKS_DIR / "tt-require-plan.py"),
-    "tt-ff-exit-monitor":        str(HOOKS_DIR / "tt-ff-exit-monitor.py"),
-    "tt-calendar-expiry-alert":  str(HOOKS_DIR / "tt-calendar-expiry-alert.py"),
-    "tt-require-dte":            str(HOOKS_DIR / "tt-require-dte.py"),
+    "tt-require-bracket":            str(HOOKS_DIR / "tt-require-bracket.py"),
+    "tt-concentration-cap":          str(HOOKS_DIR / "tt-concentration-cap.py"),
+    "tt-require-plan":               str(HOOKS_DIR / "tt-require-plan.py"),
+    "tt-ff-exit-monitor":            str(HOOKS_DIR / "tt-ff-exit-monitor.py"),
+    "tt-calendar-expiry-alert":      str(HOOKS_DIR / "tt-calendar-expiry-alert.py"),
+    "tt-require-dte":                str(HOOKS_DIR / "tt-require-dte.py"),
+    "tt-fetch-earnings-straddle":    str(HOOKS_DIR / "tt-fetch-earnings-straddle.py"),
 }
 
 PLAN_FILE     = "/tmp/tt_pending_plan.json"
 NETLIQ_FILE   = "/tmp/tt_netliq.json"
 POSITIONS_FILE = "/tmp/tt_positions.json"
+MOCK_STRADDLE_FETCH = str(FIXTURES_DIR / "mock_straddle_fetch.py")
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +210,7 @@ class Test:
         note="",
         stdout_contains=None,
         stdout_absent=None,
+        env=None,
     ):
         self.name = name
         self.fixture = FIXTURES_DIR / fixture
@@ -218,11 +221,12 @@ class Test:
         self.note = note
         self.stdout_contains = stdout_contains
         self.stdout_absent = stdout_absent
+        self.env = env or {}
 
     def run(self):
         self.setup()
         try:
-            code, stdout, stderr = run_hook(self.hook, self.fixture)
+            code, stdout, stderr = run_hook(self.hook, self.fixture, env=self.env)
         finally:
             self.teardown()
         passed = code == self.expected_exit
@@ -230,6 +234,84 @@ class Test:
             passed = self.stdout_contains in stdout
         if passed and self.stdout_absent is not None:
             passed = self.stdout_absent not in stdout
+        return {
+            "name": self.name,
+            "fixture": self.fixture.name,
+            "hook": self.hook,
+            "expected": self.expected_exit,
+            "got": code,
+            "passed": passed,
+            "stdout": stdout,
+            "stderr": stderr,
+            "note": self.note,
+        }
+
+
+class TestSidecar(Test):
+    """
+    Like Test but also verifies the content of /tmp/tt_earnings_moves.json
+    after the hook runs.  Pass `sidecar_has` (dict of sym→approx value pairs)
+    and/or `sidecar_absent` (list of symbol keys) to assert on sidecar state.
+
+    Values in `sidecar_has` are compared within a relative tolerance of 1%.
+    """
+
+    def __init__(self, *args, sidecar_has=None, sidecar_absent=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.sidecar_has = sidecar_has or {}
+        self.sidecar_absent = sidecar_absent or []
+        self._sidecar_path = Path(EARNINGS_MOVES_FILE)
+
+    def run(self):
+        self.setup()
+        sidecar_data = {}
+        try:
+            code, stdout, stderr = run_hook(self.hook, self.fixture, env=self.env)
+            try:
+                sidecar_data = (
+                    json.loads(self._sidecar_path.read_text())
+                    if self._sidecar_path.exists()
+                    else {}
+                )
+            except (json.JSONDecodeError, OSError):
+                sidecar_data = {}
+        finally:
+            self.teardown()
+
+        passed = code == self.expected_exit
+        if passed and self.stdout_contains is not None:
+            passed = self.stdout_contains in stdout
+        if passed and self.stdout_absent is not None:
+            passed = self.stdout_absent not in stdout
+
+        if passed:
+            for sym, expected_val in self.sidecar_has.items():
+                actual = sidecar_data.get(sym)
+                if actual is None:
+                    passed = False
+                    self.note = (self.note or "") + f" | FAIL: sidecar missing key '{sym}'"
+                    break
+                try:
+                    rel_err = abs(float(actual) - float(expected_val)) / float(expected_val)
+                    if rel_err > 0.01:
+                        passed = False
+                        self.note = (self.note or "") + (
+                            f" | FAIL: sidecar['{sym}']={actual:.6f} expected~{expected_val:.6f}"
+                        )
+                        break
+                except (TypeError, ValueError):
+                    passed = False
+                    break
+
+        if passed:
+            for sym in self.sidecar_absent:
+                if sym in sidecar_data:
+                    passed = False
+                    self.note = (self.note or "") + (
+                        f" | FAIL: sidecar unexpectedly contains key '{sym}'"
+                    )
+                    break
+
         return {
             "name": self.name,
             "fixture": self.fixture.name,
@@ -1025,6 +1107,42 @@ def make_tests():
             ),
         ),
 
+        # Self-healing path: sidecar absent → auto-prefetch via mock → ex-earn FF computed
+        Test(
+            name="ff_exit_monitor / earnings in front window + no sidecar + prefetch mock → ex-earn FF reported",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-ff-exit-monitor",
+            expected_exit=0,
+            env={"TT_STRADDLE_HOOK": MOCK_STRADDLE_FETCH},
+            setup=lambda: [
+                write_positions([
+                    {
+                        "symbol": "AAPL 260516C00150000",
+                        "instrument-type": "Equity Option",
+                        "quantity": 1,
+                        "quantity-direction": "Short",
+                        "underlying-symbol": "AAPL",
+                    },
+                    {
+                        "symbol": "AAPL 260620C00150000",
+                        "instrument-type": "Equity Option",
+                        "quantity": 1,
+                        "quantity-direction": "Long",
+                        "underlying-symbol": "AAPL",
+                    },
+                ]),
+                remove_earnings_moves(),
+            ],
+            teardown=lambda: [remove_positions(), remove_earnings_moves()],
+            stdout_contains="Ex-earn FF",
+            note=(
+                "When sidecar is absent but TT_STRADDLE_HOOK points to a mock script that "
+                "writes AAPL implied_move=0.04, the monitor must call it, reload the sidecar, "
+                "and report ex-earn FF (stripping the earnings premium from front IV). "
+                "This verifies the full self-healing prefetch → ex-earn FF path end-to-end."
+            ),
+        ),
+
         # ------------------------------------------------------------------
         # tt-ff-exit-monitor — cross-contract futures calendar (/ESM6 / /ESU6)
         # The bug: without stripping the CME suffix, ESM6 ≠ ESU6 so the two
@@ -1446,6 +1564,158 @@ def make_tests():
                 "TT_DTE_WARN_THRESHOLD='not-a-number' is invalid; hook must log a fallback "
                 "message to stderr and use the default threshold of 21 DTE, then warn on a "
                 "21-DTE STO option."
+            ),
+        ),
+
+        # -----------------------------------------------------------------------
+        # tt-fetch-earnings-straddle tests
+        # -----------------------------------------------------------------------
+
+        # ATM straddle found for both underlyings → sidecar written with correct values
+        TestSidecar(
+            name="tt-fetch-earnings-straddle / AAPL+SPY greeks → sidecar written with correct implied moves",
+            fixture="options_greeks_response.json",
+            hook="tt-fetch-earnings-straddle",
+            expected_exit=0,
+            setup=remove_earnings_moves,
+            teardown=remove_earnings_moves,
+            stdout_contains="implied_move=",
+            sidecar_has={
+                # stock_price via put-call parity: S ≈ K + call − put
+                # AAPL: S = 200 + 5.90 − 5.70 = 200.20; implied_move = 11.60/200.20
+                "AAPL": (5.90 + 5.70) / (200.0 + 5.90 - 5.70),
+                # SPY:  S = 540 + 4.20 − 4.00 = 540.20; implied_move = 8.20/540.20
+                "SPY":  (4.20 + 4.00) / (540.0 + 4.20 - 4.00),
+            },
+            note=(
+                "Full options_greeks_response fixture contains AAPL (ATM $200: call=5.90, put=5.70) "
+                "and SPY (ATM $540: call=4.20, put=4.00). "
+                "Hook must pick the call with delta closest to 0.50 as ATM, compute the straddle, "
+                "divide by stock_price (put-call parity: K + call − put), "
+                "and write both symbols to /tmp/tt_earnings_moves.json."
+            ),
+        ),
+
+        # Existing sidecar entries are preserved (merge semantics)
+        TestSidecar(
+            name="tt-fetch-earnings-straddle / existing sidecar entry preserved on merge",
+            fixture="options_greeks_response.json",
+            hook="tt-fetch-earnings-straddle",
+            expected_exit=0,
+            setup=lambda: write_earnings_moves({"TSLA": 0.09}),
+            teardown=remove_earnings_moves,
+            sidecar_has={
+                # AAPL stock_price via put-call parity: 200 + 5.90 − 5.70 = 200.20
+                "AAPL": (5.90 + 5.70) / (200.0 + 5.90 - 5.70),
+                "TSLA": 0.09,
+            },
+            note=(
+                "If /tmp/tt_earnings_moves.json already contains a TSLA entry, the hook must "
+                "preserve it while adding/updating AAPL and SPY from the greeks response."
+            ),
+        ),
+
+        # Stdout confirms symbols written
+        TestSidecar(
+            name="tt-fetch-earnings-straddle / stdout reports each written symbol",
+            fixture="options_greeks_response.json",
+            hook="tt-fetch-earnings-straddle",
+            expected_exit=0,
+            setup=remove_earnings_moves,
+            teardown=remove_earnings_moves,
+            stdout_contains="AAPL",
+            note=(
+                "For each implied move written, the hook must print a line containing the "
+                "symbol name so the session log is traceable."
+            ),
+        ),
+
+        # Non-watched tool → exits 0 without touching the sidecar
+        TestDTE(
+            name="tt-fetch-earnings-straddle / non-watched tool → exits 0, sidecar untouched",
+            payload_fn=lambda: {
+                "tool_name": "get_market_metrics",
+                "tool_input": {},
+                "tool_response": [],
+            },
+            hook="tt-fetch-earnings-straddle",
+            expected_exit=0,
+            setup=remove_earnings_moves,
+            teardown=remove_earnings_moves,
+            stdout_absent="implied_move",
+            note=(
+                "tool_name='get_market_metrics' is not in WATCHED_TOOLS; the hook must exit 0 "
+                "immediately without parsing the response or printing any implied_move output."
+            ),
+        ),
+
+        # Empty / missing tool_response → exits 0 cleanly
+        TestDTE(
+            name="tt-fetch-earnings-straddle / empty tool_response → exits 0 cleanly",
+            payload_fn=lambda: {
+                "tool_name": "get_options_greeks",
+                "tool_input": {},
+                "tool_response": [],
+            },
+            hook="tt-fetch-earnings-straddle",
+            expected_exit=0,
+            setup=remove_earnings_moves,
+            teardown=remove_earnings_moves,
+            note=(
+                "An empty tool_response list contains no option items. "
+                "The hook must exit 0 without error and without creating the sidecar file."
+            ),
+        ),
+
+        # Single call + single put with OCC symbols containing expiry → straddle computed
+        TestDTE(
+            name="tt-fetch-earnings-straddle / single call + single put same strike → straddle computed",
+            payload_fn=lambda: {
+                "tool_name": "get_options_greeks",
+                "tool_input": {},
+                "tool_response": [
+                    {
+                        "type": "text",
+                        "text": json.dumps({
+                            "data": {
+                                "items": [
+                                    {
+                                        "symbol": ".XYZ270615C00100000",
+                                        "underlying-symbol": "XYZ",
+                                        "option-type": "C",
+                                        "strike-price": "100.0",
+                                        "bid": 3.00,
+                                        "ask": 3.40,
+                                        "mark": 3.20,
+                                        "delta": 0.50,
+                                    },
+                                    {
+                                        "symbol": ".XYZ270615P00100000",
+                                        "underlying-symbol": "XYZ",
+                                        "option-type": "P",
+                                        "strike-price": "100.0",
+                                        "bid": 3.10,
+                                        "ask": 3.50,
+                                        "mark": 3.30,
+                                        "delta": -0.50,
+                                    },
+                                ]
+                            }
+                        }),
+                    }
+                ],
+            },
+            hook="tt-fetch-earnings-straddle",
+            expected_exit=0,
+            setup=remove_earnings_moves,
+            teardown=remove_earnings_moves,
+            stdout_contains="XYZ",
+            note=(
+                "A minimal payload with a single call+put pair at strike $100, "
+                "option symbols containing expiry 2027-06-15. "
+                "Straddle = 3.20+3.30 = 6.50; stock_price via put-call parity = "
+                "100 + 3.20 − 3.30 = 99.90; implied_move = 6.50/99.90 ≈ 0.0651. "
+                "Hook must compute and write the result, then print XYZ in stdout."
             ),
         ),
     ]

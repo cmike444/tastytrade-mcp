@@ -2,7 +2,7 @@
 
 Integration tests for the pre-trade enforcement hooks and PostToolUse monitor
 hooks (`tt-require-bracket`, `tt-concentration-cap`, `tt-require-plan`,
-`tt-ff-exit-monitor`).
+`tt-ff-exit-monitor`, `tt-fetch-earnings-straddle`).
 
 ## Running the tests
 
@@ -11,9 +11,10 @@ python hooks/tests/run_tests.py           # human-readable output
 python hooks/tests/run_tests.py --json    # machine-readable JSON
 ```
 
-All 18 tests should pass (exit 0). The runner creates and tears down the
+All tests should pass (exit 0). The runner creates and tears down the
 required sidecar files (`/tmp/tt_pending_plan.json`, `/tmp/tt_netliq.json`,
-`/tmp/tt_positions.json`) automatically for each test case.
+`/tmp/tt_positions.json`, `/tmp/tt_earnings_moves.json`) automatically for
+each test case.
 
 ## Fixture files (`fixtures/`)
 
@@ -30,6 +31,7 @@ Field names use TastyTrade's actual hyphenated keys (`instrument-type`,
 | `futures_option_otoco.json` | /ES futures-option OTOCO, 50%/2× | Future Option instrument-type recognised; concentration uses trigger-order |
 | `over_concentrated_strangle.json` | OTOCO strangle exceeding 25% cap | concentration BLOCKS; verifies trigger-order fix |
 | `ff_exit_monitor_full_response.json` | PostToolUse `get_market_metrics(detail="full")` response | FF exit monitor: AAPL calendar FF<0 → WARN; SPY calendar FF>0 → silent; no calendars → silent; missing positions file → silent |
+| `options_greeks_response.json` | PostToolUse `get_options_greeks` response (AAPL + SPY, 3 strikes each / 1 strike each) | Earnings straddle: ATM selected by delta closest to 0.50; straddle/strike computed; sidecar written and merged |
 
 ## Refreshing fixtures from real dry-run captures
 
