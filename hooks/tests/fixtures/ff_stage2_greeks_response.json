@@ -1,0 +1,18 @@
+{
+  "_comment": "PostToolUse fixture for tt-ff-stage2-exearn. Simulates get_options_greeks response for a Stage 2 strike-level FF scan. AAPL: front May16 (DTE=18 from Apr28-2026) and back Jun20 (DTE=53). Front IVs are elevated by earnings (May10 in front window). Strikes: 195 (OTM call), 200 (ATM), 205 (OTM call). Raw FF_strike: 195=60%, 200=45.8%, 205=58.3%. With implied_move=0.05 ex-earn front IVs: 195→33.1%, 200→26.8%, 205→30.6%. Ex-earn FF_strike: 195=32.2%, 200=11.7%, 205=27.5%. SPY: front May16, back Jun20, single strike 540, no earnings. Raw FF_strike=19.0%.",
+  "tool_name": "get_options_greeks",
+  "tool_input": {
+    "symbols": [
+      ".AAPL260516C00195000", ".AAPL260620C00195000",
+      ".AAPL260516C00200000", ".AAPL260620C00200000",
+      ".AAPL260516C00205000", ".AAPL260620C00205000",
+      ".SPY260516C00540000",  ".SPY260620C00540000"
+    ]
+  },
+  "tool_response": [
+    {
+      "type": "text",
+      "text": "{\"data\": {\"items\": [{\"symbol\": \".AAPL260516C00195000\", \"underlying-symbol\": \"AAPL\", \"option-type\": \"C\", \"strike-price\": \"195.0\", \"bid\": 9.60, \"ask\": 10.00, \"mark\": 9.80, \"delta\": 0.61, \"implied-volatility\": 0.40}, {\"symbol\": \".AAPL260620C00195000\", \"underlying-symbol\": \"AAPL\", \"option-type\": \"C\", \"strike-price\": \"195.0\", \"bid\": 8.70, \"ask\": 9.10, \"mark\": 8.90, \"delta\": 0.60, \"implied-volatility\": 0.25}, {\"symbol\": \".AAPL260516C00200000\", \"underlying-symbol\": \"AAPL\", \"option-type\": \"C\", \"strike-price\": \"200.0\", \"bid\": 6.80, \"ask\": 7.20, \"mark\": 7.00, \"delta\": 0.52, \"implied-volatility\": 0.35}, {\"symbol\": \".AAPL260620C00200000\", \"underlying-symbol\": \"AAPL\", \"option-type\": \"C\", \"strike-price\": \"200.0\", \"bid\": 6.60, \"ask\": 7.00, \"mark\": 6.80, \"delta\": 0.51, \"implied-volatility\": 0.24}, {\"symbol\": \".AAPL260516C00205000\", \"underlying-symbol\": \"AAPL\", \"option-type\": \"C\", \"strike-price\": \"205.0\", \"bid\": 4.20, \"ask\": 4.60, \"mark\": 4.40, \"delta\": 0.39, \"implied-volatility\": 0.38}, {\"symbol\": \".AAPL260620C00205000\", \"underlying-symbol\": \"AAPL\", \"option-type\": \"C\", \"strike-price\": \"205.0\", \"bid\": 4.00, \"ask\": 4.40, \"mark\": 4.20, \"delta\": 0.38, \"implied-volatility\": 0.24}, {\"symbol\": \".SPY260516C00540000\", \"underlying-symbol\": \"SPY\", \"option-type\": \"C\", \"strike-price\": \"540.0\", \"bid\": 5.80, \"ask\": 6.20, \"mark\": 6.00, \"delta\": 0.52, \"implied-volatility\": 0.25}, {\"symbol\": \".SPY260620C00540000\", \"underlying-symbol\": \"SPY\", \"option-type\": \"C\", \"strike-price\": \"540.0\", \"bid\": 5.40, \"ask\": 5.80, \"mark\": 5.60, \"delta\": 0.51, \"implied-volatility\": 0.21}]}}"
+    }
+  ]
+}

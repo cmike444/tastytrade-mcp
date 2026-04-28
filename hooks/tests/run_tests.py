@@ -35,6 +35,7 @@ HOOKS = {
     "tt-calendar-expiry-alert":      str(HOOKS_DIR / "tt-calendar-expiry-alert.py"),
     "tt-require-dte":                str(HOOKS_DIR / "tt-require-dte.py"),
     "tt-fetch-earnings-straddle":    str(HOOKS_DIR / "tt-fetch-earnings-straddle.py"),
+    "tt-ff-stage2-exearn":           str(HOOKS_DIR / "tt-ff-stage2-exearn.py"),
 }
 
 PLAN_FILE     = "/tmp/tt_pending_plan.json"
@@ -80,12 +81,71 @@ def remove_positions():
     Path(POSITIONS_FILE).unlink(missing_ok=True)
 
 EARNINGS_MOVES_FILE = "/tmp/tt_earnings_moves.json"
+EARNINGS_DATES_FILE = "/tmp/tt_earnings_dates.json"
 
 def write_earnings_moves(moves):
     Path(EARNINGS_MOVES_FILE).write_text(json.dumps(moves))
 
 def remove_earnings_moves():
     Path(EARNINGS_MOVES_FILE).unlink(missing_ok=True)
+
+def write_earnings_dates(dates):
+    Path(EARNINGS_DATES_FILE).write_text(json.dumps(dates))
+
+def remove_earnings_dates():
+    Path(EARNINGS_DATES_FILE).unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Stage 2 dynamic payload helpers (dates relative to today so tests never age out)
+# ---------------------------------------------------------------------------
+
+def _stage2_aapl_items(front_date, back_date):
+    """
+    Build a list of get_options_greeks response items for a synthetic AAPL
+    Stage 2 scan: three call strikes (195/200/205) across two expiries.
+
+    Front IVs are elevated vs. back to simulate earnings-inflated term structure:
+      195C: front=40%, back=25%
+      200C: front=35%, back=24%
+      205C: front=38%, back=24%
+
+    Raw FF_strike: 195=60%, 200=45.8%, 205=58.3%
+    With implied_move=5% and DTE_front around 18:
+      ex-earn front IVs ≈ 195→33%, 200→27%, 205→31%
+      ex-earn FF_strike ≈ 195=+32%, 200=+12%, 205=+28% → best=195
+    """
+    def sym(expiry, strike):
+        return ".AAPL{}C{}".format(expiry.strftime("%y%m%d"), strike)
+
+    return [
+        {"symbol": sym(front_date, "00195000"), "underlying-symbol": "AAPL",
+         "option-type": "C", "strike-price": "195.0", "implied-volatility": 0.40},
+        {"symbol": sym(back_date,  "00195000"), "underlying-symbol": "AAPL",
+         "option-type": "C", "strike-price": "195.0", "implied-volatility": 0.25},
+        {"symbol": sym(front_date, "00200000"), "underlying-symbol": "AAPL",
+         "option-type": "C", "strike-price": "200.0", "implied-volatility": 0.35},
+        {"symbol": sym(back_date,  "00200000"), "underlying-symbol": "AAPL",
+         "option-type": "C", "strike-price": "200.0", "implied-volatility": 0.24},
+        {"symbol": sym(front_date, "00205000"), "underlying-symbol": "AAPL",
+         "option-type": "C", "strike-price": "205.0", "implied-volatility": 0.38},
+        {"symbol": sym(back_date,  "00205000"), "underlying-symbol": "AAPL",
+         "option-type": "C", "strike-price": "205.0", "implied-volatility": 0.24},
+    ]
+
+
+def _stage2_payload(items):
+    """Wrap a list of option items in a get_options_greeks hook payload."""
+    return {
+        "tool_name": "get_options_greeks",
+        "tool_input": {},
+        "tool_response": [
+            {
+                "type": "text",
+                "text": json.dumps({"data": {"items": items}}),
+            }
+        ],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1664,6 +1724,188 @@ def make_tests():
             note=(
                 "An empty tool_response list contains no option items. "
                 "The hook must exit 0 without error and without creating the sidecar file."
+            ),
+        ),
+
+        # -----------------------------------------------------------------------
+        # tt-ff-stage2-exearn tests
+        # Fixture: ff_stage2_greeks_response.json
+        #   AAPL: front May16 IV=40%/35%/38% (195/200/205), back Jun20 IV=25%/24%/24%
+        #   SPY:  front May16 IV=25%, back Jun20 IV=21%, single strike 540
+        #
+        # With implied_move=0.05, earnings May10 in AAPL front window (DTE=18):
+        #   ex-earn front IVs: 195→~33.1%, 200→~26.8%, 205→~30.6%
+        #   ex-earn FF_strike: 195=+32.2%, 200=+11.7%, 205=+27.5% → best=195
+        # -----------------------------------------------------------------------
+
+        # Ex-earn FF_strike computed and "BEST" strike identified (dynamic dates)
+        TestDTE(
+            name="ff_stage2_exearn / AAPL earnings in front window + sidecar → ex-earn FF_strike + BEST",
+            payload_fn=lambda: _stage2_payload(
+                _stage2_aapl_items(
+                    _date.today() + timedelta(days=18),
+                    _date.today() + timedelta(days=53),
+                )
+            ),
+            hook="tt-ff-stage2-exearn",
+            expected_exit=0,
+            setup=lambda: [
+                write_earnings_dates(
+                    {"AAPL": (_date.today() + timedelta(days=12)).isoformat()}
+                ),
+                write_earnings_moves({"AAPL": 0.05}),
+            ],
+            teardown=lambda: [remove_earnings_dates(), remove_earnings_moves()],
+            stdout_contains="ex-earn",
+            note=(
+                "AAPL: front +18d IVs elevated by earnings (+12d, in front window). "
+                "Sidecar provides implied_move=5%. Hook must strip earnings variance from "
+                "front IVs and report ex-earn FF_strike per strike, labelling the best."
+            ),
+        ),
+
+        # Best strike identified as AAPL 195C (highest ex-earn FF_strike) (dynamic dates)
+        TestDTE(
+            name="ff_stage2_exearn / AAPL earnings in front window + sidecar → best strike reported",
+            payload_fn=lambda: _stage2_payload(
+                _stage2_aapl_items(
+                    _date.today() + timedelta(days=18),
+                    _date.today() + timedelta(days=53),
+                )
+            ),
+            hook="tt-ff-stage2-exearn",
+            expected_exit=0,
+            setup=lambda: [
+                write_earnings_dates(
+                    {"AAPL": (_date.today() + timedelta(days=12)).isoformat()}
+                ),
+                write_earnings_moves({"AAPL": 0.05}),
+            ],
+            teardown=lambda: [remove_earnings_dates(), remove_earnings_moves()],
+            stdout_contains="BEST",
+            note=(
+                "After ex-earn stripping, 195C has the highest ex-earn FF_strike. "
+                "Hook must mark it with 'BEST' in the output table."
+            ),
+        ),
+
+        # Earnings date known but no implied_move in sidecar → falls back to advisory note (dynamic dates)
+        TestDTE(
+            name="ff_stage2_exearn / AAPL earnings in front window + no implied_move sidecar → sidecar note",
+            payload_fn=lambda: _stage2_payload(
+                _stage2_aapl_items(
+                    _date.today() + timedelta(days=18),
+                    _date.today() + timedelta(days=53),
+                )
+            ),
+            hook="tt-ff-stage2-exearn",
+            expected_exit=0,
+            setup=lambda: [
+                write_earnings_dates(
+                    {"AAPL": (_date.today() + timedelta(days=12)).isoformat()}
+                ),
+                remove_earnings_moves(),
+            ],
+            teardown=lambda: [remove_earnings_dates(), remove_earnings_moves()],
+            stdout_contains="no implied move in sidecar",
+            note=(
+                "Earnings date is known (AAPL +12d, in front window) but "
+                "tt_earnings_moves.json is absent. Hook must note that raw IVs are used "
+                "and prompt the user to populate the sidecar."
+            ),
+        ),
+
+        # No earnings dates sidecar at all → clean raw FF_strike output (no ex-earn labels) (dynamic dates)
+        TestDTE(
+            name="ff_stage2_exearn / no earnings sidecars → raw FF_strike reported, no ex-earn label",
+            payload_fn=lambda: _stage2_payload(
+                _stage2_aapl_items(
+                    _date.today() + timedelta(days=18),
+                    _date.today() + timedelta(days=53),
+                )
+            ),
+            hook="tt-ff-stage2-exearn",
+            expected_exit=0,
+            setup=lambda: [remove_earnings_dates(), remove_earnings_moves()],
+            teardown=lambda: [remove_earnings_dates(), remove_earnings_moves()],
+            stdout_contains="STAGE 2 FF_STRIKE SCAN",
+            stdout_absent="ex-earn",
+            note=(
+                "Neither tt_earnings_dates.json nor tt_earnings_moves.json is present. "
+                "Hook must emit a clean FF_strike scan with no ex-earn labels or adjustments."
+            ),
+        ),
+
+        # Non-watched tool → exits silently
+        TestDTE(
+            name="ff_stage2_exearn / non-watched tool → silent (exit 0)",
+            payload_fn=lambda: {
+                "tool_name": "get_market_metrics",
+                "tool_input": {},
+                "tool_response": [],
+            },
+            hook="tt-ff-stage2-exearn",
+            expected_exit=0,
+            stdout_absent="STAGE 2",
+            note=(
+                "tool_name='get_market_metrics' is not in WATCHED_TOOLS; "
+                "hook must exit 0 immediately without printing any output."
+            ),
+        ),
+
+        # All strikes in contango (front < back) → "do NOT enter" Stage 2 hard gate
+        TestDTE(
+            name="ff_stage2_exearn / all strikes in contango (front IV < back IV) → do NOT enter",
+            payload_fn=lambda: {
+                "tool_name": "get_options_greeks",
+                "tool_input": {},
+                "tool_response": [
+                    {
+                        "type": "text",
+                        "text": json.dumps({
+                            "data": {
+                                "items": [
+                                    {
+                                        "symbol": ".CONTG260516C00100000",
+                                        "underlying-symbol": "CONTG",
+                                        "option-type": "C",
+                                        "strike-price": "100.0",
+                                        "implied-volatility": 0.20,
+                                    },
+                                    {
+                                        "symbol": ".CONTG260620C00100000",
+                                        "underlying-symbol": "CONTG",
+                                        "option-type": "C",
+                                        "strike-price": "100.0",
+                                        "implied-volatility": 0.28,
+                                    },
+                                    {
+                                        "symbol": ".CONTG260516C00105000",
+                                        "underlying-symbol": "CONTG",
+                                        "option-type": "C",
+                                        "strike-price": "105.0",
+                                        "implied-volatility": 0.19,
+                                    },
+                                    {
+                                        "symbol": ".CONTG260620C00105000",
+                                        "underlying-symbol": "CONTG",
+                                        "option-type": "C",
+                                        "strike-price": "105.0",
+                                        "implied-volatility": 0.25,
+                                    },
+                                ]
+                            }
+                        }),
+                    }
+                ],
+            },
+            hook="tt-ff-stage2-exearn",
+            expected_exit=0,
+            stdout_contains="do NOT enter",
+            note=(
+                "Synthetic 'CONTG' underlying: both strikes have front IV < back IV "
+                "(contango at all strikes). Hook must emit the Stage 2 hard-gate message "
+                "'do NOT enter' to block calendar entry per forward-factor.md."
             ),
         ),
 

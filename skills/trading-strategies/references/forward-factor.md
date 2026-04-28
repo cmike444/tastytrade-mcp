@@ -61,9 +61,10 @@ Term-structure FF is computed from aggregate/ATM IVs across expiries. At any ind
 
 Procedure:
 1. Call `get_options_greeks` for **both expiries** across a range of strikes: ATM, ATM+0.5, ATM+1.0, ATM+1.5 (calls); ATM-0.5, ATM-1.0 (puts)
-2. For each strike compute: `FF_strike = (IV_front_strike − IV_back_strike) / IV_back_strike`
-3. **Enter at the strike with the largest positive FF_strike** — not necessarily ATM
-4. If FF_strike ≤ 0 at all strikes scanned → term-structure signal was aggregate noise; **do not enter**
+2. **Apply ex-earn IV stripping** before computing FF_strike (same requirement as Stage 1): if an earnings event falls within either expiry window, strip the earnings jump variance from that window's IV using `IV_exearn² = IV_raw² − implied_move² / T` (T in years). Use the `tt-ff-stage2-exearn` hook (PostToolUse on `get_options_greeks`) which reads `/tmp/tt_earnings_moves.json` (implied move) and `/tmp/tt_earnings_dates.json` (earnings date) to automate this. Without stripping, front IV inflated by earnings premium will produce a false positive FF_strike signal.
+3. For each strike compute: `FF_strike = (IV_front_exearn − IV_back_exearn) / IV_back_exearn`
+4. **Enter at the strike with the largest positive FF_strike (ex-earn)** — not necessarily ATM
+5. If ex-earn FF_strike ≤ 0 at all strikes scanned → term-structure signal was aggregate noise or earnings-inflated; **do not enter**
 
 **Real example (UNG May15/May29):**
 - Term-structure FF: 38.8% → strong scanner signal
