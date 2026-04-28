@@ -64,8 +64,13 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
+from tt_hook_utils import (
+    EARNINGS_MOVES_FILE,
+    parse_greeks_items,
+    load_earnings_moves,
+)
+
 WATCHED_TOOLS = {"get_options_greeks"}
-EARNINGS_MOVES_FILE = "/tmp/tt_earnings_moves.json"
 POSITIONS_FILE = "/tmp/tt_positions.json"
 SESSION_CACHE = "/tmp/tt_session_cache.json"
 TT_BASE = "https://api.tastytrade.com"
@@ -156,56 +161,6 @@ def _load_calendar_front_expiries():
                 result[underlying] = front
 
     return result
-
-
-# ---------------------------------------------------------------------------
-# Response parsing (PostToolUse mode)
-# ---------------------------------------------------------------------------
-
-def _try_parse_json(value):
-    if isinstance(value, (dict, list)):
-        return value
-    try:
-        return json.loads(value)
-    except (json.JSONDecodeError, TypeError):
-        return None
-
-
-def _extract_items(tool_response):
-    """
-    Return the flat list of option-item dicts from a get_options_greeks
-    tool response (handles MCP text-block wrappers and various JSON shapes).
-    """
-    raw = tool_response
-
-    if isinstance(raw, list):
-        text_parts = [
-            b.get("text", "")
-            for b in raw
-            if isinstance(b, dict) and b.get("type") == "text"
-        ]
-        if text_parts:
-            parsed = _try_parse_json("\n".join(text_parts))
-            if parsed is not None:
-                raw = parsed
-
-    if isinstance(raw, str):
-        raw = _try_parse_json(raw) or {}
-
-    if isinstance(raw, dict):
-        data = raw.get("data", raw)
-        if isinstance(data, dict):
-            items = data.get("items", [])
-        elif isinstance(data, list):
-            items = data
-        else:
-            items = []
-    elif isinstance(raw, list):
-        items = raw
-    else:
-        items = []
-
-    return items if isinstance(items, list) else []
 
 
 # ---------------------------------------------------------------------------
@@ -406,27 +361,6 @@ def compute_implied_moves(items, calendar_front_expiries=None):
 # ---------------------------------------------------------------------------
 # Sidecar helpers
 # ---------------------------------------------------------------------------
-
-def load_existing_moves():
-    if not os.path.exists(EARNINGS_MOVES_FILE):
-        return {}
-    try:
-        with open(EARNINGS_MOVES_FILE) as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return {}
-    if not isinstance(data, dict):
-        return {}
-    result = {}
-    for sym, val in data.items():
-        try:
-            move = float(val)
-            if move > 0:
-                result[str(sym).upper()] = move
-        except (TypeError, ValueError):
-            continue
-    return result
-
 
 def write_moves(moves):
     tmp = EARNINGS_MOVES_FILE + ".tmp"
@@ -639,7 +573,7 @@ def run_prefetch_mode(underlying: str, front_expiry_str: str) -> bool:
         print(f"tt-fetch-earnings-straddle: invalid expiry '{front_expiry_str}': {exc}", file=sys.stderr)
         return False
 
-    existing = load_existing_moves()
+    existing = load_earnings_moves()
     move = fetch_straddle_from_api(underlying, front_expiry)
     if move is None:
         return False
@@ -669,7 +603,7 @@ def run_hook_mode():
         sys.exit(0)
 
     tool_response = hook_input.get("tool_response", [])
-    items = _extract_items(tool_response)
+    items = parse_greeks_items(tool_response)
     if not items:
         sys.exit(0)
 
@@ -678,7 +612,7 @@ def run_hook_mode():
     if not new_moves:
         sys.exit(0)
 
-    existing = load_existing_moves()
+    existing = load_earnings_moves()
     merged = {**existing, **new_moves}
     write_moves(merged)
 

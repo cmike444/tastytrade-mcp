@@ -31,14 +31,15 @@ import subprocess
 import sys
 from datetime import date
 
+from tt_hook_utils import (
+    EARNINGS_MOVES_FILE,
+    parse_greeks_items,
+    load_earnings_moves,
+    compute_exearn_iv,
+)
+
 WATCHED_TOOLS = {"get_market_metrics"}
 POSITIONS_FILE = "/tmp/tt_positions.json"
-
-# Sidecar file: maps SYMBOL → earnings implied move fraction (straddle/stock).
-# Auto-populated by tt-fetch-earnings-straddle.py (PostToolUse on get_options_greeks)
-# or written manually before get_market_metrics is called.
-# Example: {"AAPL": 0.05, "SPY": 0.02}
-EARNINGS_MOVES_FILE = "/tmp/tt_earnings_moves.json"
 
 # Companion script that can auto-fetch straddle data from the TastyTrade API.
 _STRADDLE_HOOK = os.path.join(os.path.dirname(__file__), "tt-fetch-earnings-straddle.py")
@@ -160,47 +161,6 @@ def load_calendar_pairs():
 # Extract term structure and earnings dates from the get_market_metrics response
 # ---------------------------------------------------------------------------
 
-def _try_parse_json(value):
-    if isinstance(value, (dict, list)):
-        return value
-    try:
-        return json.loads(value)
-    except (json.JSONDecodeError, TypeError):
-        return None
-
-
-def _parse_items(tool_response):
-    """
-    Shared JSON-parsing helper that returns the list of per-symbol metric items
-    from a get_market_metrics tool response.
-    """
-    raw = tool_response
-
-    if isinstance(raw, list):
-        text_parts = [
-            b.get("text", "")
-            for b in raw
-            if isinstance(b, dict) and b.get("type") == "text"
-        ]
-        combined = "\n".join(text_parts)
-        raw = _try_parse_json(combined) or raw
-
-    if isinstance(raw, str):
-        raw = _try_parse_json(raw) or {}
-
-    items = []
-    if isinstance(raw, dict):
-        data = raw.get("data", raw)
-        if isinstance(data, dict):
-            items = data.get("items", [])
-        elif isinstance(data, list):
-            items = data
-    elif isinstance(raw, list):
-        items = raw
-
-    return items if isinstance(items, list) else []
-
-
 def extract_earnings_dates(tool_response):
     """
     Parse the get_market_metrics tool response and return a mapping:
@@ -209,7 +169,7 @@ def extract_earnings_dates(tool_response):
     Only symbols with a valid 'earnings-next-date' field are included.
     """
     result = {}
-    for item in _parse_items(tool_response):
+    for item in parse_greeks_items(tool_response):
         if not isinstance(item, dict):
             continue
         symbol = str(item.get("symbol", "")).upper()
@@ -236,7 +196,7 @@ def extract_term_structures(tool_response):
     The JSON body can have various shapes; we try to handle them all.
     """
     result = {}
-    for item in _parse_items(tool_response):
+    for item in parse_greeks_items(tool_response):
         if not isinstance(item, dict):
             continue
         symbol = str(item.get("symbol", "")).upper()
@@ -264,68 +224,6 @@ def extract_term_structures(tool_response):
             result[symbol] = sorted(expirations, key=lambda x: x["expiration_date"])
 
     return result
-
-
-# ---------------------------------------------------------------------------
-# Earnings implied-move sidecar
-# ---------------------------------------------------------------------------
-
-def load_earnings_moves():
-    """
-    Load /tmp/tt_earnings_moves.json and return a dict mapping SYMBOL → implied_move.
-
-    implied_move is a fraction representing the market-expected one-standard-deviation
-    earnings move: straddle_price / stock_price (e.g. 0.05 = 5%).
-
-    Returns an empty dict if the file is absent or malformed.
-    """
-    if not os.path.exists(EARNINGS_MOVES_FILE):
-        return {}
-    try:
-        with open(EARNINGS_MOVES_FILE) as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return {}
-    if not isinstance(data, dict):
-        return {}
-    result = {}
-    for sym, val in data.items():
-        try:
-            move = float(val)
-            if move > 0:
-                result[str(sym).upper()] = move
-        except (TypeError, ValueError):
-            continue
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Ex-earn IV computation
-# ---------------------------------------------------------------------------
-
-def compute_exearn_iv(iv_raw, dte, implied_move):
-    """
-    Strip the earnings jump variance from iv_raw to obtain the ex-earnings IV.
-
-    Formula (from computations.md):
-        IV_exearn² × T = IV_raw² × T − implied_move²
-        => IV_exearn² = IV_raw² − implied_move² / T
-
-    Args:
-        iv_raw:       Raw IV in decimal (e.g. 0.30 = 30%).
-        dte:          Calendar days to expiry of the window containing earnings.
-        implied_move: Earnings implied move fraction (straddle / stock price).
-
-    Returns the ex-earn IV in decimal, or None if the result would be imaginary
-    (i.e. the full variance is dominated by the earnings jump).
-    """
-    t = dte / 365.0
-    if t <= 0 or implied_move <= 0 or iv_raw <= 0:
-        return None
-    var_exearn = iv_raw ** 2 - (implied_move ** 2) / t
-    if var_exearn <= 0:
-        return None
-    return math.sqrt(var_exearn)
 
 
 # ---------------------------------------------------------------------------

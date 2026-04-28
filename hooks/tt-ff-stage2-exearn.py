@@ -22,15 +22,19 @@ The hook exits 0 in all cases (advisory only; does not block).
 """
 
 import json
-import math
 import os
 import re
 import sys
 from datetime import date
 
+from tt_hook_utils import (
+    parse_greeks_items,
+    load_earnings_moves,
+    compute_exearn_iv,
+)
+
 WATCHED_TOOLS = {"get_options_greeks"}
 
-EARNINGS_MOVES_FILE = "/tmp/tt_earnings_moves.json"
 EARNINGS_DATES_FILE = "/tmp/tt_earnings_dates.json"
 
 
@@ -77,31 +81,6 @@ def parse_option_symbol(symbol):
 # Sidecar loaders
 # ---------------------------------------------------------------------------
 
-def load_earnings_moves():
-    """
-    Load /tmp/tt_earnings_moves.json → {SYMBOL: implied_move_float}.
-    Returns {} on missing or malformed file.
-    """
-    if not os.path.exists(EARNINGS_MOVES_FILE):
-        return {}
-    try:
-        with open(EARNINGS_MOVES_FILE) as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return {}
-    if not isinstance(data, dict):
-        return {}
-    result = {}
-    for sym, val in data.items():
-        try:
-            move = float(val)
-            if move > 0:
-                result[str(sym).upper()] = move
-        except (TypeError, ValueError):
-            continue
-    return result
-
-
 def load_earnings_dates():
     """
     Load /tmp/tt_earnings_dates.json → {SYMBOL: date}.
@@ -123,75 +102,6 @@ def load_earnings_dates():
         except (ValueError, TypeError):
             continue
     return result
-
-
-# ---------------------------------------------------------------------------
-# Parse get_options_greeks response
-# ---------------------------------------------------------------------------
-
-def _try_parse_json(value):
-    if isinstance(value, (dict, list)):
-        return value
-    try:
-        return json.loads(value)
-    except (json.JSONDecodeError, TypeError):
-        return None
-
-
-def parse_greeks_items(tool_response):
-    """
-    Extract the list of per-symbol items from the get_options_greeks
-    tool response, which may arrive as a list of MCP content blocks.
-    Returns a list of dicts.
-    """
-    raw = tool_response
-
-    if isinstance(raw, list):
-        text_parts = [
-            b.get("text", "")
-            for b in raw
-            if isinstance(b, dict) and b.get("type") == "text"
-        ]
-        combined = "\n".join(text_parts)
-        raw = _try_parse_json(combined) or raw
-
-    if isinstance(raw, str):
-        raw = _try_parse_json(raw) or {}
-
-    items = []
-    if isinstance(raw, dict):
-        data = raw.get("data", raw)
-        if isinstance(data, dict):
-            items = data.get("items", [])
-        elif isinstance(data, list):
-            items = data
-    elif isinstance(raw, list):
-        items = raw
-
-    return items if isinstance(items, list) else []
-
-
-# ---------------------------------------------------------------------------
-# Ex-earn IV computation (shared logic, same as tt-ff-exit-monitor)
-# ---------------------------------------------------------------------------
-
-def compute_exearn_iv(iv_raw, dte, implied_move):
-    """
-    Strip the earnings jump variance from iv_raw.
-
-    Formula:
-        IV_exearn² = IV_raw² − implied_move² / T   (T = dte/365)
-
-    Returns the ex-earn IV in decimal, or None if the result would be
-    non-positive (earnings jump variance dominates the total variance).
-    """
-    t = dte / 365.0
-    if t <= 0 or implied_move <= 0 or iv_raw <= 0:
-        return None
-    var_exearn = iv_raw ** 2 - (implied_move ** 2) / t
-    if var_exearn <= 0:
-        return None
-    return math.sqrt(var_exearn)
 
 
 # ---------------------------------------------------------------------------
