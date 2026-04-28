@@ -452,23 +452,30 @@ def _occ_symbol(underlying, expiry_date, opt_type="C", strike="00200000"):
 
 
 def _dte_order(symbol, instrument_type="Equity Option", action="Sell to Open",
-               tool_name="create_order"):
-    """Return a minimal hook-input envelope for a single-leg option order."""
+               tool_name="create_order", strategy=None):
+    """Return a minimal hook-input envelope for a single-leg option order.
+
+    Pass ``strategy`` to embed a "strategy" field in the order payload so the
+    hook can apply per-strategy DTE thresholds (via TT_DTE_THRESHOLDS).
+    """
+    order = {
+        "time-in-force": "Day",
+        "order-type": "Limit",
+        "price": 3.50,
+        "legs": [
+            {
+                "instrument-type": instrument_type,
+                "symbol": symbol,
+                "action": action,
+                "quantity": 1,
+            }
+        ],
+    }
+    if strategy is not None:
+        order["strategy"] = strategy
     return {
         "tool_name": tool_name,
-        "tool_input": {
-            "time-in-force": "Day",
-            "order-type": "Limit",
-            "price": 3.50,
-            "legs": [
-                {
-                    "instrument-type": instrument_type,
-                    "symbol": symbol,
-                    "action": action,
-                    "quantity": 1,
-                }
-            ],
-        },
+        "tool_input": order,
     }
 
 
@@ -1624,6 +1631,142 @@ def make_tests():
                 "TT_DTE_WARN_THRESHOLD='not-a-number' is invalid; hook must log a fallback "
                 "message to stderr and use the default threshold of 21 DTE, then warn on a "
                 "21-DTE STO option."
+            ),
+        ),
+
+        # Per-strategy threshold: iron_condor at exactly its threshold (30 DTE) → WARN
+        TestDTE(
+            name="tt-require-dte / iron_condor strategy at 30 DTE, per-strategy threshold=30 → WARN (exit 1)",
+            payload_fn=lambda: _dte_order(
+                _occ_symbol("SPX", _date.today() + timedelta(days=30)),
+                instrument_type="Equity Option",
+                action="Sell to Open",
+                strategy="iron_condor",
+            ),
+            hook="tt-require-dte",
+            expected_exit=1,
+            env={"TT_DTE_THRESHOLDS": "iron_condor:30,covered_call:14"},
+            stdout_contains="WARNING",
+            note=(
+                "TT_DTE_THRESHOLDS='iron_condor:30,covered_call:14'; order carries "
+                "strategy='iron_condor'; STO option at exactly 30 DTE equals the "
+                "per-strategy threshold → must warn."
+            ),
+        ),
+
+        # Per-strategy threshold: iron_condor one day above its threshold (31 DTE) → ALLOW
+        TestDTE(
+            name="tt-require-dte / iron_condor strategy at 31 DTE, per-strategy threshold=30 → ALLOW (exit 0)",
+            payload_fn=lambda: _dte_order(
+                _occ_symbol("SPX", _date.today() + timedelta(days=31)),
+                instrument_type="Equity Option",
+                action="Sell to Open",
+                strategy="iron_condor",
+            ),
+            hook="tt-require-dte",
+            expected_exit=0,
+            env={"TT_DTE_THRESHOLDS": "iron_condor:30,covered_call:14"},
+            stdout_absent="WARNING",
+            note=(
+                "TT_DTE_THRESHOLDS='iron_condor:30,covered_call:14'; strategy='iron_condor'; "
+                "STO option at 31 DTE is one day above the per-strategy threshold of 30 → silent."
+            ),
+        ),
+
+        # Per-strategy threshold: covered_call at 14 DTE (its threshold) → WARN
+        TestDTE(
+            name="tt-require-dte / covered_call strategy at 14 DTE, per-strategy threshold=14 → WARN (exit 1)",
+            payload_fn=lambda: _dte_order(
+                _occ_symbol("AAPL", _date.today() + timedelta(days=14)),
+                instrument_type="Equity Option",
+                action="Sell to Open",
+                strategy="covered_call",
+            ),
+            hook="tt-require-dte",
+            expected_exit=1,
+            env={"TT_DTE_THRESHOLDS": "iron_condor:30,covered_call:14"},
+            stdout_contains="WARNING",
+            note=(
+                "TT_DTE_THRESHOLDS='iron_condor:30,covered_call:14'; strategy='covered_call'; "
+                "STO option at exactly 14 DTE equals the per-strategy threshold → must warn."
+            ),
+        ),
+
+        # Per-strategy threshold: covered_call above its threshold (15 DTE) → ALLOW
+        TestDTE(
+            name="tt-require-dte / covered_call strategy at 15 DTE, per-strategy threshold=14 → ALLOW (exit 0)",
+            payload_fn=lambda: _dte_order(
+                _occ_symbol("AAPL", _date.today() + timedelta(days=15)),
+                instrument_type="Equity Option",
+                action="Sell to Open",
+                strategy="covered_call",
+            ),
+            hook="tt-require-dte",
+            expected_exit=0,
+            env={"TT_DTE_THRESHOLDS": "iron_condor:30,covered_call:14"},
+            stdout_absent="WARNING",
+            note=(
+                "TT_DTE_THRESHOLDS='iron_condor:30,covered_call:14'; strategy='covered_call'; "
+                "STO option at 15 DTE is one day above the per-strategy threshold of 14 → silent."
+            ),
+        ),
+
+        # Per-strategy threshold overrides global: iron_condor at 22 DTE would pass the
+        # global 21-DTE threshold but fails its own 30-DTE per-strategy threshold → WARN
+        TestDTE(
+            name="tt-require-dte / iron_condor at 22 DTE overrides global 21-DTE threshold → WARN (exit 1)",
+            payload_fn=lambda: _dte_order(
+                _occ_symbol("SPX", _date.today() + timedelta(days=22)),
+                instrument_type="Equity Option",
+                action="Sell to Open",
+                strategy="iron_condor",
+            ),
+            hook="tt-require-dte",
+            expected_exit=1,
+            env={"TT_DTE_THRESHOLDS": "iron_condor:30"},
+            stdout_contains="WARNING",
+            note=(
+                "TT_DTE_THRESHOLDS='iron_condor:30'; strategy='iron_condor'; 22 DTE is above "
+                "the global 21-DTE threshold but below the iron_condor-specific 30-DTE threshold. "
+                "The per-strategy threshold must take precedence → must warn."
+            ),
+        ),
+
+        # Unknown strategy falls back to global threshold: strategy not in TT_DTE_THRESHOLDS
+        # → uses global 21-DTE threshold; 21 DTE → WARN
+        TestDTE(
+            name="tt-require-dte / unknown strategy falls back to global threshold → WARN at 21 DTE (exit 1)",
+            payload_fn=lambda: _dte_order(
+                _occ_symbol("AAPL", _date.today() + timedelta(days=21)),
+                instrument_type="Equity Option",
+                action="Sell to Open",
+                strategy="unknown_strategy",
+            ),
+            hook="tt-require-dte",
+            expected_exit=1,
+            env={"TT_DTE_THRESHOLDS": "iron_condor:30,covered_call:14"},
+            stdout_contains="WARNING",
+            note=(
+                "TT_DTE_THRESHOLDS set but strategy='unknown_strategy' is not in the map; "
+                "hook must fall back to the global 21-DTE threshold and warn at 21 DTE."
+            ),
+        ),
+
+        # No strategy field in payload → uses global threshold as before
+        TestDTE(
+            name="tt-require-dte / no strategy field → global threshold applies → ALLOW at 22 DTE (exit 0)",
+            payload_fn=lambda: _dte_order(
+                _occ_symbol("AAPL", _date.today() + timedelta(days=22)),
+                instrument_type="Equity Option",
+                action="Sell to Open",
+            ),
+            hook="tt-require-dte",
+            expected_exit=0,
+            env={"TT_DTE_THRESHOLDS": "iron_condor:30,covered_call:14"},
+            stdout_absent="WARNING",
+            note=(
+                "TT_DTE_THRESHOLDS set but order has no 'strategy' field; hook must use the "
+                "global 21-DTE threshold. 22 DTE is above the threshold → silent."
             ),
         ),
 

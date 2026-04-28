@@ -8,6 +8,11 @@ the configurable DTE threshold (default 21, override via TT_DTE_WARN_THRESHOLD).
 The threshold is a mechanical time stop — VRP positions should be entered with
 enough time remaining to capture premium before the gamma-risk zone begins.
 
+Per-strategy thresholds can be set via TT_DTE_THRESHOLDS (comma-separated
+name:value pairs, e.g. "iron_condor:30,covered_call:14").  When an order
+carries a "strategy" field in its payload the matching per-strategy threshold
+is used; otherwise the global threshold applies.
+
 This hook does NOT block the order (exit 1 = warning). The agent receives
 the warning in context and should confirm the DTE is intentional before
 proceeding. Hard exits belong to the EOD management process, not entry gating.
@@ -30,9 +35,10 @@ from datetime import date
 
 WATCHED_TOOLS = {"create_order", "create_complex_order"}
 
-# Number of days-to-expiration at or below which a Sell-to-Open triggers a
-# warning.  Override via the TT_DTE_WARN_THRESHOLD environment variable
-# (integer, e.g. export TT_DTE_WARN_THRESHOLD=14).  Defaults to 21.
+# ---------------------------------------------------------------------------
+# Global threshold (TT_DTE_WARN_THRESHOLD)
+# ---------------------------------------------------------------------------
+
 _dte_env = os.environ.get("TT_DTE_WARN_THRESHOLD", "")
 try:
     DTE_WARN_THRESHOLD = int(_dte_env) if _dte_env.strip() else 21
@@ -43,6 +49,45 @@ except ValueError:
         file=sys.stderr,
     )
     DTE_WARN_THRESHOLD = 21
+
+# ---------------------------------------------------------------------------
+# Per-strategy thresholds (TT_DTE_THRESHOLDS)
+# Format: "iron_condor:30,covered_call:14"
+# ---------------------------------------------------------------------------
+
+_strategy_thresholds = {}
+_thresholds_env = os.environ.get("TT_DTE_THRESHOLDS", "")
+if _thresholds_env.strip():
+    for _entry in _thresholds_env.split(","):
+        _entry = _entry.strip()
+        if not _entry:
+            continue
+        if ":" not in _entry:
+            print(
+                "tt-require-dte: TT_DTE_THRESHOLDS entry {!r} is missing ':'; "
+                "skipping.".format(_entry),
+                file=sys.stderr,
+            )
+            continue
+        _name, _, _val = _entry.partition(":")
+        _name = _name.strip()
+        _val = _val.strip()
+        try:
+            _strategy_thresholds[_name] = int(_val)
+        except ValueError:
+            print(
+                "tt-require-dte: TT_DTE_THRESHOLDS entry {!r} has non-integer value {!r}; "
+                "skipping.".format(_entry, _val),
+                file=sys.stderr,
+            )
+
+
+def _threshold_for(strategy):
+    """Return the DTE threshold for the given strategy name (may be None or '').
+    Falls back to the global DTE_WARN_THRESHOLD when no per-strategy value exists."""
+    if strategy and strategy in _strategy_thresholds:
+        return _strategy_thresholds[strategy]
+    return DTE_WARN_THRESHOLD
 
 
 def _parse_expiry(symbol):
@@ -81,13 +126,16 @@ def collect_opening_legs(order):
 
 def check_dte(order):
     """
-    Inspect all STO option legs and return a list of (symbol, dte) tuples
-    where dte <= DTE_WARN_THRESHOLD and dte > 0 (0DTE is exempt).
+    Inspect all STO option legs and return a list of (symbol, dte, threshold) tuples
+    where dte <= threshold and dte > 0 (0DTE is exempt).
     Returns empty list if nothing to warn about.
     """
     opening_legs = collect_opening_legs(order)
     today = date.today()
     violations = []
+
+    strategy = order.get("strategy", "")
+    threshold = _threshold_for(strategy)
 
     for leg in opening_legs:
         if not is_option(leg):
@@ -101,8 +149,8 @@ def check_dte(order):
         dte = (expiry - today).days
         if dte <= 0:
             continue
-        if dte <= DTE_WARN_THRESHOLD:
-            violations.append((symbol, dte))
+        if dte <= threshold:
+            violations.append((symbol, dte, threshold))
 
     return violations
 
@@ -125,8 +173,11 @@ def main():
         sys.exit(0)
 
     lines = []
-    for symbol, dte in sorted(violations, key=lambda x: x[1]):
-        lines.append("  {} — {} DTE (threshold: {} DTE)".format(symbol, dte, DTE_WARN_THRESHOLD))
+    for symbol, dte, threshold in sorted(violations, key=lambda x: x[1]):
+        lines.append("  {} — {} DTE (threshold: {} DTE)".format(symbol, dte, threshold))
+
+    # Use the threshold from the first violation for the narrative (they share a strategy)
+    narrative_threshold = violations[0][2]
 
     print(
         "WARNING -- entering at or inside {threshold} DTE:\n"
@@ -138,7 +189,7 @@ def main():
         "If this is intentional (e.g. an earnings straddle, a same-day roll, or a\n"
         "strategy that explicitly uses short-dated expiries), confirm before proceeding.\n"
         "The order has NOT been blocked — this is an advisory warning.".format(
-            threshold=DTE_WARN_THRESHOLD,
+            threshold=narrative_threshold,
             details="\n".join(lines),
         )
     )
