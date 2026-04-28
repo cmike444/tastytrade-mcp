@@ -36,6 +36,7 @@ HOOKS = {
     "tt-require-dte":                str(HOOKS_DIR / "tt-require-dte.py"),
     "tt-fetch-earnings-straddle":    str(HOOKS_DIR / "tt-fetch-earnings-straddle.py"),
     "tt-ff-stage2-exearn":           str(HOOKS_DIR / "tt-ff-stage2-exearn.py"),
+    "tt-populate-earnings-dates":    str(HOOKS_DIR / "tt-populate-earnings-dates.py"),
 }
 
 PLAN_FILE     = "/tmp/tt_pending_plan.json"
@@ -361,6 +362,79 @@ class TestSidecar(Test):
                         break
                 except (TypeError, ValueError):
                     passed = False
+                    break
+
+        if passed:
+            for sym in self.sidecar_absent:
+                if sym in sidecar_data:
+                    passed = False
+                    self.note = (self.note or "") + (
+                        f" | FAIL: sidecar unexpectedly contains key '{sym}'"
+                    )
+                    break
+
+        return {
+            "name": self.name,
+            "fixture": self.fixture.name,
+            "hook": self.hook,
+            "expected": self.expected_exit,
+            "got": code,
+            "passed": passed,
+            "stdout": stdout,
+            "stderr": stderr,
+            "note": self.note,
+        }
+
+
+class TestSidecarDates(Test):
+    """
+    Like Test but verifies the content of /tmp/tt_earnings_dates.json after
+    the hook runs.  Pass `sidecar_has` (dict of sym→ISO-date-string pairs)
+    and/or `sidecar_absent` (list of symbol keys) to assert on sidecar state.
+
+    Date values in `sidecar_has` are compared as ISO strings (exact match).
+    """
+
+    def __init__(self, *args, sidecar_has=None, sidecar_absent=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.sidecar_has = sidecar_has or {}
+        self.sidecar_absent = sidecar_absent or []
+        self._sidecar_path = Path(EARNINGS_DATES_FILE)
+
+    def run(self):
+        self.setup()
+        sidecar_data = {}
+        try:
+            code, stdout, stderr = run_hook(self.hook, self.fixture, env=self.env)
+            try:
+                sidecar_data = (
+                    json.loads(self._sidecar_path.read_text())
+                    if self._sidecar_path.exists()
+                    else {}
+                )
+            except (json.JSONDecodeError, OSError):
+                sidecar_data = {}
+        finally:
+            self.teardown()
+
+        passed = code == self.expected_exit
+        if passed and self.stdout_contains is not None:
+            passed = self.stdout_contains in stdout
+        if passed and self.stdout_absent is not None:
+            passed = self.stdout_absent not in stdout
+
+        if passed:
+            for sym, expected_val in self.sidecar_has.items():
+                actual = sidecar_data.get(sym)
+                if actual is None:
+                    passed = False
+                    self.note = (self.note or "") + f" | FAIL: sidecar missing key '{sym}'"
+                    break
+                if str(actual) != str(expected_val):
+                    passed = False
+                    self.note = (self.note or "") + (
+                        f" | FAIL: sidecar['{sym}']={actual!r} expected {expected_val!r}"
+                    )
                     break
 
         if passed:
@@ -2049,6 +2123,119 @@ def make_tests():
                 "Synthetic 'CONTG' underlying: both strikes have front IV < back IV "
                 "(contango at all strikes). Hook must emit the Stage 2 hard-gate message "
                 "'do NOT enter' to block calendar entry per forward-factor.md."
+            ),
+        ),
+
+        # -----------------------------------------------------------------------
+        # tt-populate-earnings-dates tests
+        # Fixture: ff_exit_monitor_full_response.json
+        #   AAPL: earnings-next-date=2026-05-10
+        #   SPY:  earnings-next-date=2026-05-25
+        #   ES:   no earnings-next-date field
+        # -----------------------------------------------------------------------
+
+        # Full response → AAPL and SPY dates written, ES skipped
+        TestSidecarDates(
+            name="tt-populate-earnings-dates / full response → AAPL+SPY dates written, ES absent",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-populate-earnings-dates",
+            expected_exit=0,
+            setup=remove_earnings_dates,
+            teardown=remove_earnings_dates,
+            stdout_contains="AAPL",
+            sidecar_has={"AAPL": "2026-05-10", "SPY": "2026-05-25"},
+            sidecar_absent=["ES"],
+            note=(
+                "get_market_metrics(detail='full') response contains AAPL (2026-05-10) "
+                "and SPY (2026-05-25) with earnings-next-date, and ES without. "
+                "Hook must write both dated symbols and omit ES."
+            ),
+        ),
+
+        # Merge: pre-existing TSLA entry is preserved alongside new entries
+        TestSidecarDates(
+            name="tt-populate-earnings-dates / existing sidecar entry preserved on merge",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-populate-earnings-dates",
+            expected_exit=0,
+            setup=lambda: write_earnings_dates({"TSLA": "2026-08-01"}),
+            teardown=remove_earnings_dates,
+            sidecar_has={"AAPL": "2026-05-10", "SPY": "2026-05-25", "TSLA": "2026-08-01"},
+            note=(
+                "If /tmp/tt_earnings_dates.json already contains a TSLA entry, the hook "
+                "must preserve it while adding/updating AAPL and SPY from the response."
+            ),
+        ),
+
+        # Stdout reports each written symbol
+        TestSidecarDates(
+            name="tt-populate-earnings-dates / stdout reports each written symbol",
+            fixture="ff_exit_monitor_full_response.json",
+            hook="tt-populate-earnings-dates",
+            expected_exit=0,
+            setup=remove_earnings_dates,
+            teardown=remove_earnings_dates,
+            stdout_contains="SPY",
+            note=(
+                "For each earnings date written the hook must print a line containing "
+                "the symbol name so the session log is traceable."
+            ),
+        ),
+
+        # Non-watched tool (get_options_greeks) → exits 0, sidecar untouched
+        TestDTE(
+            name="tt-populate-earnings-dates / non-watched tool → exits 0, sidecar untouched",
+            payload_fn=lambda: {
+                "tool_name": "get_options_greeks",
+                "tool_input": {"detail": "full"},
+                "tool_response": [],
+            },
+            hook="tt-populate-earnings-dates",
+            expected_exit=0,
+            setup=remove_earnings_dates,
+            teardown=remove_earnings_dates,
+            stdout_absent="earnings-next-date",
+            note=(
+                "tool_name='get_options_greeks' is not in WATCHED_TOOLS; the hook must "
+                "exit 0 immediately without parsing the response or writing the sidecar."
+            ),
+        ),
+
+        # Watched tool but detail != "full" → exits 0, sidecar untouched
+        TestDTE(
+            name="tt-populate-earnings-dates / detail != full → exits 0, sidecar untouched",
+            payload_fn=lambda: {
+                "tool_name": "get_market_metrics",
+                "tool_input": {"symbols": ["AAPL"], "detail": "standard"},
+                "tool_response": [],
+            },
+            hook="tt-populate-earnings-dates",
+            expected_exit=0,
+            setup=remove_earnings_dates,
+            teardown=remove_earnings_dates,
+            stdout_absent="earnings-next-date",
+            note=(
+                "tool_name='get_market_metrics' is watched but detail='standard' (not 'full'). "
+                "The hook must exit 0 without writing the sidecar — earnings-next-date fields "
+                "are only present in full responses."
+            ),
+        ),
+
+        # Empty tool_response with detail=full → exits 0 cleanly, no sidecar created
+        TestDTE(
+            name="tt-populate-earnings-dates / empty tool_response (detail=full) → exits 0 cleanly",
+            payload_fn=lambda: {
+                "tool_name": "get_market_metrics",
+                "tool_input": {"symbols": [], "detail": "full"},
+                "tool_response": [],
+            },
+            hook="tt-populate-earnings-dates",
+            expected_exit=0,
+            setup=remove_earnings_dates,
+            teardown=remove_earnings_dates,
+            note=(
+                "An empty tool_response list yields no earnings dates. "
+                "The hook must exit 0 without error and without creating the sidecar file."
             ),
         ),
 
