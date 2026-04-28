@@ -124,6 +124,24 @@ def write_dates(dates):
     os.replace(tmp_path, EARNINGS_DATES_FILE)
 
 
+def prune_stale_dates(dates):
+    """
+    Remove entries whose stored date is strictly in the past (< today).
+
+    Returns a new dict containing only entries where earnings-next-date is
+    today or in the future.  Entries with unparseable dates are also dropped.
+    """
+    today = date.today()
+    pruned = {}
+    for sym, dt_str in dates.items():
+        try:
+            if date.fromisoformat(str(dt_str)) >= today:
+                pruned[sym] = dt_str
+        except (ValueError, TypeError):
+            pass
+    return pruned
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -151,7 +169,7 @@ def main():
         sys.exit(0)
 
     existing = load_existing_dates()
-    merged = {**existing, **new_dates}
+    merged = prune_stale_dates({**existing, **new_dates})
     try:
         write_dates(merged)
     except OSError as exc:

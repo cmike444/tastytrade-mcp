@@ -459,6 +459,106 @@ class TestSidecarDates(Test):
         }
 
 
+class TestDTESidecarDates:
+    """
+    Like TestSidecarDates but uses a dynamically-generated payload dict
+    instead of a static fixture file.  Use when the hook inspects date.today()
+    and both the payload and sidecar assertions depend on relative dates.
+
+    Pass `sidecar_has` (dict of sym→ISO-date-string) and/or `sidecar_absent`
+    (list of symbol keys) to assert on the state of tt_earnings_dates.json
+    after the hook exits.
+    """
+
+    def __init__(
+        self,
+        name,
+        payload_fn,
+        hook,
+        expected_exit,
+        env=None,
+        setup=None,
+        teardown=None,
+        note="",
+        stdout_contains=None,
+        stdout_absent=None,
+        sidecar_has=None,
+        sidecar_absent=None,
+    ):
+        self.name = name
+        self.payload_fn = payload_fn
+        self.hook = hook
+        self.expected_exit = expected_exit
+        self.env = env or {}
+        self.setup = setup or (lambda: None)
+        self.teardown = teardown or (lambda: None)
+        self.note = note
+        self.stdout_contains = stdout_contains
+        self.stdout_absent = stdout_absent
+        self.sidecar_has = sidecar_has or {}
+        self.sidecar_absent = sidecar_absent or []
+        self.fixture = "(dynamic)"
+        self._sidecar_path = Path(EARNINGS_DATES_FILE)
+
+    def run(self):
+        self.setup()
+        sidecar_data = {}
+        try:
+            payload = self.payload_fn()
+            code, stdout, stderr = run_hook_payload(self.hook, payload, env=self.env)
+            try:
+                sidecar_data = (
+                    json.loads(self._sidecar_path.read_text())
+                    if self._sidecar_path.exists()
+                    else {}
+                )
+            except (json.JSONDecodeError, OSError):
+                sidecar_data = {}
+        finally:
+            self.teardown()
+
+        passed = code == self.expected_exit
+        if passed and self.stdout_contains is not None:
+            passed = self.stdout_contains in stdout
+        if passed and self.stdout_absent is not None:
+            passed = self.stdout_absent not in stdout
+
+        if passed:
+            for sym, expected_val in self.sidecar_has.items():
+                actual = sidecar_data.get(sym)
+                if actual is None:
+                    passed = False
+                    self.note = (self.note or "") + f" | FAIL: sidecar missing key '{sym}'"
+                    break
+                if str(actual) != str(expected_val):
+                    passed = False
+                    self.note = (self.note or "") + (
+                        f" | FAIL: sidecar['{sym}']={actual!r} expected {expected_val!r}"
+                    )
+                    break
+
+        if passed:
+            for sym in self.sidecar_absent:
+                if sym in sidecar_data:
+                    passed = False
+                    self.note = (self.note or "") + (
+                        f" | FAIL: sidecar unexpectedly contains key '{sym}'"
+                    )
+                    break
+
+        return {
+            "name": self.name,
+            "fixture": self.fixture,
+            "hook": self.hook,
+            "expected": self.expected_exit,
+            "got": code,
+            "passed": passed,
+            "stdout": stdout,
+            "stderr": stderr,
+            "note": self.note,
+        }
+
+
 class TestDTE:
     """
     Like Test but uses a dynamically-generated payload dict instead of a
@@ -2236,6 +2336,123 @@ def make_tests():
             note=(
                 "An empty tool_response list yields no earnings dates. "
                 "The hook must exit 0 without error and without creating the sidecar file."
+            ),
+        ),
+
+        # Pruning: stale sidecar entry (yesterday) is removed, future entry kept
+        TestDTESidecarDates(
+            name="tt-populate-earnings-dates / stale sidecar entry pruned, future entry kept",
+            payload_fn=lambda: {
+                "tool_name": "get_market_metrics",
+                "tool_input": {"detail": "full"},
+                "tool_response": [
+                    {
+                        "type": "text",
+                        "text": json.dumps({
+                            "data": {
+                                "items": [
+                                    {
+                                        "symbol": "NVDA",
+                                        "earnings-next-date": (_date.today() + timedelta(days=30)).isoformat(),
+                                    }
+                                ]
+                            }
+                        }),
+                    }
+                ],
+            },
+            hook="tt-populate-earnings-dates",
+            expected_exit=0,
+            setup=lambda: write_earnings_dates({
+                "STALE": (_date.today() - timedelta(days=1)).isoformat(),
+                "NVDA": (_date.today() + timedelta(days=30)).isoformat(),
+            }),
+            teardown=remove_earnings_dates,
+            sidecar_has={"NVDA": (_date.today() + timedelta(days=30)).isoformat()},
+            sidecar_absent=["STALE"],
+            note=(
+                "An existing sidecar entry whose date is yesterday (already passed) "
+                "must be pruned when the merged file is written.  The future NVDA entry "
+                "must survive."
+            ),
+        ),
+
+        # Pruning: today's date is not stale (>= today), must be kept
+        TestDTESidecarDates(
+            name="tt-populate-earnings-dates / today's date is not stale, kept in sidecar",
+            payload_fn=lambda: {
+                "tool_name": "get_market_metrics",
+                "tool_input": {"detail": "full"},
+                "tool_response": [
+                    {
+                        "type": "text",
+                        "text": json.dumps({
+                            "data": {
+                                "items": [
+                                    {
+                                        "symbol": "MSFT",
+                                        "earnings-next-date": (_date.today() + timedelta(days=14)).isoformat(),
+                                    }
+                                ]
+                            }
+                        }),
+                    }
+                ],
+            },
+            hook="tt-populate-earnings-dates",
+            expected_exit=0,
+            setup=lambda: write_earnings_dates({
+                "TODAY": _date.today().isoformat(),
+            }),
+            teardown=remove_earnings_dates,
+            sidecar_has={
+                "TODAY": _date.today().isoformat(),
+                "MSFT": (_date.today() + timedelta(days=14)).isoformat(),
+            },
+            note=(
+                "An existing entry whose date equals today must NOT be pruned "
+                "(the pruning threshold is strictly < today)."
+            ),
+        ),
+
+        # Pruning: multiple stale entries are all removed, leaving only future ones
+        TestDTESidecarDates(
+            name="tt-populate-earnings-dates / multiple stale entries pruned, future entries survive",
+            payload_fn=lambda: {
+                "tool_name": "get_market_metrics",
+                "tool_input": {"detail": "full"},
+                "tool_response": [
+                    {
+                        "type": "text",
+                        "text": json.dumps({
+                            "data": {
+                                "items": [
+                                    {
+                                        "symbol": "AMD",
+                                        "earnings-next-date": (_date.today() + timedelta(days=60)).isoformat(),
+                                    }
+                                ]
+                            }
+                        }),
+                    }
+                ],
+            },
+            hook="tt-populate-earnings-dates",
+            expected_exit=0,
+            setup=lambda: write_earnings_dates({
+                "OLD1": (_date.today() - timedelta(days=90)).isoformat(),
+                "OLD2": (_date.today() - timedelta(days=1)).isoformat(),
+                "FUTURE": (_date.today() + timedelta(days=45)).isoformat(),
+            }),
+            teardown=remove_earnings_dates,
+            sidecar_has={
+                "FUTURE": (_date.today() + timedelta(days=45)).isoformat(),
+                "AMD": (_date.today() + timedelta(days=60)).isoformat(),
+            },
+            sidecar_absent=["OLD1", "OLD2"],
+            note=(
+                "Multiple stale entries (90 days ago and yesterday) must all be pruned. "
+                "Pre-existing FUTURE entry and newly written AMD must both survive."
             ),
         ),
 
