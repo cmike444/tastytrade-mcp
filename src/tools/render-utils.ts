@@ -184,6 +184,7 @@ export function renderQuote(quotes: any[]): string {
 
   const cards = [...bySymbol.values()].map(q => {
     const sym = q.eventSymbol ?? q.symbol ?? "?";
+    const resolvedStreamer = q.resolvedStreamerSymbol;
     const last = q.lastPrice ?? q.last;
     const bid = q.bidPrice ?? q.bid;
     const ask = q.askPrice ?? q.ask;
@@ -199,6 +200,7 @@ export function renderQuote(quotes: any[]): string {
     return `<div class="card">
   <div class="card-title">Quote</div>
   <div class="card-symbol">${esc(sym)}</div>
+  ${resolvedStreamer ? `<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Contract: ${esc(resolvedStreamer)}</div>` : ""}
   <div class="price-row">
     <span class="price-big">${fmt(last)}</span>
     ${chg != null ? `<span class="change ${cls}">${arrow(chg)}${fmt(Math.abs(chg))} (${fmtPct(chgPct)})</span>` : ""}

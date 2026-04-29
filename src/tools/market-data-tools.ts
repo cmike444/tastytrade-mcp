@@ -28,9 +28,9 @@ function projectCandle(item: any, detail: DetailTier): any {
   return result;
 }
 
-const QUOTE_SUMMARY_FIELDS = ["eventSymbol", "bidPrice", "askPrice", "lastPrice"];
+const QUOTE_SUMMARY_FIELDS = ["eventSymbol", "resolvedStreamerSymbol", "bidPrice", "askPrice", "lastPrice"];
 const QUOTE_STANDARD_FIELDS = [
-  "eventSymbol", "eventType", "bidPrice", "askPrice", "lastPrice",
+  "eventSymbol", "resolvedStreamerSymbol", "eventType", "bidPrice", "askPrice", "lastPrice",
   "bidSize", "askSize", "lastSize", "openPrice", "highPrice", "lowPrice",
   "closePrice", "dayVolume", "dayTurnover",
 ];
@@ -182,9 +182,9 @@ export function registerMarketDataTools(server: McpServer) {
 
   server.tool(
     "get_quote",
-    "Get real-time quote data for one or more symbols using DXLink. Use 'detail' to control response size: 'summary' returns only bid, ask, last, and symbol; 'standard' returns common quote fields (default); 'full' returns the raw DXLink event. Use 'format: html' for a visual ticker card.",
+    "Get real-time quote data for one or more symbols using DXLink. Futures root symbols (e.g. /CL, /ES) are accepted and automatically resolved to the active front-month contract — you do not need to supply the streamer symbol manually. Use 'detail' to control response size: 'summary' returns only bid, ask, last, and symbol; 'standard' returns common quote fields (default); 'full' returns the raw DXLink event. Use 'format: html' for a visual ticker card.",
     {
-      symbols: z.preprocess(coerceToArray, z.array(z.string())).describe("Array of symbols to get quotes for (e.g., ['AAPL', 'TSLA'])"),
+      symbols: z.preprocess(coerceToArray, z.array(z.string())).describe("Array of symbols to get quotes for (e.g., ['AAPL', 'TSLA', '/CL', '/ES'])"),
       timeoutMs: z.number().default(5000).describe("Timeout in milliseconds to wait for quotes (default 5000)"),
       detail: z.enum(["summary", "standard", "full"]).default("standard").describe("Response detail level: 'summary' (bid, ask, last, symbol), 'standard' (common quote fields, default), 'full' (complete raw DXLink event)"),
       format: z.enum(["json", "html"]).default("json").describe("Output format: 'json' (default) or 'html' for a visual ticker card artifact"),
@@ -193,6 +193,36 @@ export function registerMarketDataTools(server: McpServer) {
     async ({ symbols, timeoutMs, detail, format }) => {
       try {
         const client = getClient();
+
+        // Resolve futures root symbols (e.g. /CL) to their active streamer symbol (e.g. /CLN5:XCME)
+        const symbolMap = new Map<string, string>(); // streamerSymbol -> originalSymbol
+        const streamerSymbols: string[] = [];
+        for (const sym of symbols) {
+          if (sym.startsWith("/")) {
+            let instrument: any;
+            try {
+              instrument = await client.instrumentsService.getSingleFuture(sym);
+            } catch (err: any) {
+              return {
+                content: [{ type: "text" as const, text: `Error: Could not look up futures instrument for ${sym}: ${err?.message ?? err}` }],
+                isError: true,
+              };
+            }
+            const resolved = instrument?.["streamer-symbol"] ?? instrument?.streamerSymbol;
+            if (!resolved) {
+              return {
+                content: [{ type: "text" as const, text: `Error: No streamer symbol found for futures instrument ${sym}. The contract may be expired or unavailable.` }],
+                isError: true,
+              };
+            }
+            symbolMap.set(resolved, sym);
+            streamerSymbols.push(resolved);
+          } else {
+            symbolMap.set(sym, sym);
+            streamerSymbols.push(sym);
+          }
+        }
+
         const collectedEvents: any[] = [];
 
         const listener = (events: any[]) => {
@@ -208,12 +238,12 @@ export function registerMarketDataTools(server: McpServer) {
           await client.quoteStreamer.connect();
         }
 
-        registerQuoteSubscriptions(symbols);
+        registerQuoteSubscriptions(streamerSymbols);
         try {
-          client.quoteStreamer.subscribe(symbols);
+          client.quoteStreamer.subscribe(streamerSymbols);
           await new Promise(resolve => setTimeout(resolve, timeoutMs));
         } finally {
-          unregisterQuoteSubscriptions(symbols);
+          unregisterQuoteSubscriptions(streamerSymbols);
           client.quoteStreamer.removeEventListener(listener);
         }
 
@@ -221,11 +251,22 @@ export function registerMarketDataTools(server: McpServer) {
           return { content: [{ type: "text" as const, text: `No quote data received for ${symbols.join(', ')} within ${timeoutMs}ms. Market may be closed or symbols may be invalid.` }] };
         }
 
+        // Re-map streamer symbols back to the original user-supplied symbols,
+        // and annotate futures events with the resolved streamer symbol.
+        const remappedEvents = collectedEvents.map(e => {
+          const streamer = e.eventSymbol;
+          const original = symbolMap.get(streamer);
+          if (original && original !== streamer) {
+            return { ...e, eventSymbol: original, resolvedStreamerSymbol: streamer };
+          }
+          return e;
+        });
+
         if (format === "html") {
-          return { content: [{ type: "text" as const, text: renderQuote(collectedEvents) }] };
+          return { content: [{ type: "text" as const, text: renderQuote(remappedEvents) }] };
         }
 
-        const projected = collectedEvents.map(e => projectQuote(e, detail));
+        const projected = remappedEvents.map(e => projectQuote(e, detail));
         return { content: [{ type: "text" as const, text: JSON.stringify(projected) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
@@ -323,7 +364,7 @@ export function registerMarketDataTools(server: McpServer) {
 
   server.tool(
     "get_options_greeks",
-    "Get options Greeks (delta, gamma, theta, vega, rho) by subscribing to Greeks events via DXLink for specific option symbols. Use 'detail' to control response size: 'summary' returns only symbol + the 5 Greek values; 'standard' returns Greeks plus implied volatility and underlying price (default); 'full' returns the raw DXLink event. Use 'format: html' for a visual Greeks card.",
+    "Get options Greeks (delta, gamma, theta, vega, rho) by subscribing to Greeks events via DXLink for specific option symbols. This tool accepts fully-qualified option streamer symbols only (e.g. '.AAPL240119C185'); futures root symbols are not applicable here. Use 'detail' to control response size: 'summary' returns only symbol + the 5 Greek values; 'standard' returns Greeks plus implied volatility and underlying price (default); 'full' returns the raw DXLink event. Use 'format: html' for a visual Greeks card.",
     {
       optionSymbols: z.preprocess(coerceToArray, z.array(z.string())).describe("Array of option streamer symbols. Use call-streamer-symbol or put-streamer-symbol from option chain endpoints."),
       timeoutMs: z.number().default(5000).describe("Timeout in milliseconds to wait for Greeks data (default 5000)"),
