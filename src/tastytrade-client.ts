@@ -2,6 +2,7 @@ import TastytradeClient from "@tastytrade/api";
 import WebSocket from "ws";
 import { createRequire } from "module";
 import { logger } from "./logger.js";
+import { execute as cbExecute, getCircuitBreakerStatus } from "./circuit-breaker.js";
 
 (global as any).WebSocket = WebSocket;
 (global as any).window = { WebSocket, setTimeout, clearTimeout };
@@ -282,11 +283,61 @@ export interface TastyTradeOAuthConfig {
   sandbox?: boolean;
 }
 
+/**
+ * Explicit set of TastytradeClient REST service property names.
+ * Only these services are proxied through the circuit breaker; all other
+ * client properties (quoteStreamer, accountStreamer, accessToken, config, etc.)
+ * are returned as-is to avoid interfering with DXLink/WebSocket machinery.
+ */
+const REST_SERVICE_PROPS = new Set([
+  "accountsAndCustomersService",
+  "accountStatusService",
+  "balancesAndPositionsService",
+  "instrumentsService",
+  "marketMetricsService",
+  "marginRequirementsService",
+  "netLiquidatingValueHistoryService",
+  "orderService",
+  "riskParametersService",
+  "symbolSearchService",
+  "transactionsService",
+  "watchlistsService",
+]);
+
+type AnyRecord = Record<string, unknown>;
+
+function makeServiceProxy<T extends object>(service: T): T {
+  return new Proxy(service, {
+    get(obj, prop: string) {
+      const value = (obj as AnyRecord)[prop];
+      if (typeof value === "function") {
+        const fn = value as (...a: unknown[]) => Promise<unknown>;
+        return (...args: unknown[]) => cbExecute(() => fn.apply(obj, args));
+      }
+      return value;
+    },
+  });
+}
+
+function makeCircuitBreakerProxy(target: TastytradeClient): TastytradeClient {
+  return new Proxy(target, {
+    get(obj, prop: string) {
+      const raw = (obj as unknown as AnyRecord)[prop];
+      if (REST_SERVICE_PROPS.has(prop)) {
+        return makeServiceProxy(raw as object);
+      }
+      return raw;
+    },
+  });
+}
+
 export function getClient(): TastytradeClient {
   if (!client) {
     throw new Error("TastyTrade client is not initialized. Authentication has not completed.");
   }
-  return client;
+  // REST service calls go through the circuit breaker via makeCircuitBreakerProxy.
+  // Non-REST properties (quoteStreamer, accessToken, etc.) are returned directly.
+  return makeCircuitBreakerProxy(client);
 }
 
 /**
@@ -327,7 +378,10 @@ async function fetchBacktestToken(): Promise<void> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Backtest token fetch failed (${res.status}): ${text.slice(0, 200)}`);
+    throw Object.assign(
+      new Error(`Backtest token fetch failed (${res.status}): ${text.slice(0, 200)}`),
+      { status: res.status }
+    );
   }
   const data = (await res.json()) as { access_token?: string };
   const token = data?.access_token;
@@ -343,9 +397,9 @@ export async function requireSessionToken(): Promise<string> {
     throw new Error("TastyTrade client is not authenticated. Use check_auth_status to reconnect.");
   }
   if (!sessionToken) {
-    // Try to fetch it now if credentials are available
+    // Route through the circuit breaker so failures count toward the threshold.
     try {
-      await fetchBacktestToken();
+      await cbExecute(() => fetchBacktestToken());
     } catch (err: any) {
       throw new Error(`Backtesting token unavailable: ${err.message}`);
     }
@@ -407,12 +461,14 @@ export async function autoAuthenticate(): Promise<string> {
   const sandbox = process.env.TASTYTRADE_SANDBOX === "true";
 
   if (clientSecret && refreshToken) {
-    return authenticateOAuth({
-      clientSecret,
-      refreshToken,
-      oauthScopes: ["read", "trade"],
-      sandbox,
-    });
+    return cbExecute(() =>
+      authenticateOAuth({
+        clientSecret,
+        refreshToken,
+        oauthScopes: ["read", "trade"],
+        sandbox,
+      })
+    );
   }
 
   throw new Error(
@@ -452,6 +508,7 @@ export function getConnectionStatus() {
     quoteStreamerConnected,
     tokenExpiresAt,
     lastKeepaliveAt: lastKeepaliveAt ? new Date(lastKeepaliveAt).toISOString() : null,
+    circuitBreaker: getCircuitBreakerStatus(),
   };
 }
 
@@ -475,7 +532,7 @@ export function startKeepalive(): () => void {
     let pingOk = false;
     if (isAuthenticated && client) {
       try {
-        await client.accountsAndCustomersService.getCustomerAccounts();
+        await cbExecute(() => client!.accountsAndCustomersService.getCustomerAccounts());
         pingOk = true;
         lastKeepaliveAt = Date.now();
         logger.info("[TastyTrade] Keepalive: ping succeeded.");
