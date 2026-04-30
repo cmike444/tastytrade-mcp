@@ -428,31 +428,33 @@ export function registerMarketDataTools(server: McpServer) {
     async ({ optionSymbols, timeoutMs, detail, format }) => {
       try {
         const client = getClient();
-        const collectedEvents: any[] = [];
-
-        const listener = (events: any[]) => {
-          for (const event of events) {
-            collectedEvents.push(event);
-          }
-        };
-
-        client.quoteStreamer.addEventListener(listener);
 
         const wasConnected = (client.quoteStreamer as any).isConnected;
         if (!wasConnected) {
           await client.quoteStreamer.connect();
         }
 
-        // Greeks events are streamed via quoteStreamer.subscribe (same as quotes),
-        // so registering as quote subscriptions ensures replay after reconnect.
-        registerQuoteSubscriptions(optionSymbols);
-        try {
-          client.quoteStreamer.subscribe(optionSymbols);
-          await new Promise(resolve => setTimeout(resolve, timeoutMs));
-        } finally {
-          unregisterQuoteSubscriptions(optionSymbols);
-          client.quoteStreamer.removeEventListener(listener);
-        }
+        // Per-symbol coalescing: attach to an existing in-flight subscription
+        // when a concurrent caller is already fetching the same option symbol.
+        const perSymbolPromises = optionSymbols.map((sym) => {
+          const { promise, isNew } = getOrCreateInflightQuote(sym, timeoutMs, client.quoteStreamer);
+          if (isNew) {
+            registerQuoteSubscriptions([sym]);
+            try {
+              client.quoteStreamer.subscribe([sym]);
+            } catch (err) {
+              unregisterQuoteSubscriptions([sym]);
+              throw err;
+            }
+            return promise.then((events: any[]) => {
+              unregisterQuoteSubscriptions([sym]);
+              return events;
+            });
+          }
+          return promise;
+        });
+
+        const collectedEvents = (await Promise.all(perSymbolPromises)).flat();
 
         const greeksData = collectedEvents.filter((e: any) =>
           e.eventType === 'Greeks' ||
