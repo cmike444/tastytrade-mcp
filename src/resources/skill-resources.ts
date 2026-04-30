@@ -6,11 +6,26 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SKILLS_ROOT = join(__dirname, "../../skills");
 
+const SKILL_CACHE_TTL_MS = 5 * 60 * 1000;
+
 interface SkillData {
   name: string;
   description: string;
   mainContent: string;
   references: Map<string, string>;
+}
+
+interface SkillCacheEntry {
+  data: SkillData;
+  loadedAt: number;
+}
+
+const skillCache: Map<string, SkillCacheEntry> = new Map();
+let skillCacheHits = 0;
+let skillCacheMisses = 0;
+
+export function getSkillCacheStats(): { hits: number; misses: number; cachedSkills: number } {
+  return { hits: skillCacheHits, misses: skillCacheMisses, cachedSkills: skillCache.size };
 }
 
 function loadSkill(skillDir: string): SkillData | null {
@@ -41,16 +56,44 @@ function loadSkill(skillDir: string): SkillData | null {
   return { name, description, mainContent, references };
 }
 
+function getOrLoadSkill(dirName: string, forceReload = false): SkillData | null {
+  const now = Date.now();
+  const cached = skillCache.get(dirName);
+
+  if (!forceReload && cached && (now - cached.loadedAt) < SKILL_CACHE_TTL_MS) {
+    skillCacheHits++;
+    return cached.data;
+  }
+
+  // Guard against path traversal: only reload skills that were present at
+  // server startup.  Unknown dirNames (never in SKILLS_MAP) are rejected
+  // without touching the filesystem.
+  if (!SKILLS_MAP.has(dirName)) {
+    return cached?.data ?? null;
+  }
+
+  skillCacheMisses++;
+  const skillDir = join(SKILLS_ROOT, dirName);
+  const data = loadSkill(skillDir);
+  if (data) {
+    skillCache.set(dirName, { data, loadedAt: now });
+  }
+  return data;
+}
+
 function loadAllSkills(): Map<string, SkillData> {
   const skills = new Map<string, SkillData>();
   if (!existsSync(SKILLS_ROOT)) return skills;
 
+  const now = Date.now();
   for (const entry of readdirSync(SKILLS_ROOT, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
-    const skillDir = join(SKILLS_ROOT, entry.name);
+    const dirName = entry.name;
+    const skillDir = join(SKILLS_ROOT, dirName);
     const skill = loadSkill(skillDir);
     if (skill) {
-      skills.set(entry.name, skill);
+      skills.set(dirName, skill);
+      skillCache.set(dirName, { data: skill, loadedAt: now });
     }
   }
   return skills;
@@ -64,8 +107,8 @@ export const SKILLS = Array.from(SKILLS_MAP.values()).map(s => ({
   description: s.description,
 }));
 
-export function getSkillContent(dirName: string, section?: string): string | null {
-  const skill = SKILLS_MAP.get(dirName);
+export function getSkillContent(dirName: string, section?: string, forceReload = false): string | null {
+  const skill = getOrLoadSkill(dirName, forceReload);
   if (!skill) return null;
 
   if (!section) return skill.mainContent;
@@ -130,8 +173,8 @@ function extractSection(content: string, section: string): string {
   return sectionLines.join("\n");
 }
 
-export function listSkillReferences(dirName: string): Array<{ name: string; path: string }> {
-  const skill = SKILLS_MAP.get(dirName);
+export function listSkillReferences(dirName: string, forceReload = false): Array<{ name: string; path: string }> {
+  const skill = getOrLoadSkill(dirName, forceReload);
   if (!skill) return [];
   return Array.from(skill.references.keys()).map(name => ({
     name,

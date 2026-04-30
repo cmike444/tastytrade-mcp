@@ -182,6 +182,7 @@ async function startHttpServer() {
       },
       tastytrade: getConnectionStatus(),
       oauth: getOAuthMetrics(),
+      skillCache: snapshot.skillCache,
     };
     res.set("Cache-Control", "no-store");
     res.type("application/json").send(JSON.stringify(payload, null, 2));

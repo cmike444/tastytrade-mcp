@@ -40,6 +40,53 @@ export interface CandleSubscriptionEntry {
 const activeQuoteRefCounts: Map<string, number> = new Map();
 const activeCandleRefCounts: Map<string, { count: number; entry: CandleSubscriptionEntry }> = new Map();
 
+// In-flight quote coalescing: keyed by streamer symbol.
+// When multiple concurrent callers request the same symbol, only one WebSocket
+// subscription is opened; additional callers attach to the existing promise.
+const inflightQuoteRequests: Map<string, Promise<any[]>> = new Map();
+
+/**
+ * Returns a promise that resolves with all events for `symbol` collected over
+ * `timeoutMs` milliseconds.  If an identical in-flight subscription already
+ * exists for the symbol, the caller attaches to it and no duplicate subscribe
+ * message is sent to DXLink.
+ *
+ * Returns `{ promise, isNew }`.  The caller is responsible for calling
+ * `quoteStreamer.subscribe([symbol])` and managing ref-count registration ONLY
+ * when `isNew === true`.
+ */
+export function getOrCreateInflightQuote(
+  symbol: string,
+  timeoutMs: number,
+  qs: any
+): { promise: Promise<any[]>; isNew: boolean } {
+  const existing = inflightQuoteRequests.get(symbol);
+  if (existing) {
+    logger.info(`[DXLink] Coalescing quote request for ${symbol} to existing in-flight subscription.`);
+    return { promise: existing, isNew: false };
+  }
+
+  const events: any[] = [];
+  const listener = (evts: any[]) => {
+    for (const e of evts) {
+      if (e.eventSymbol === symbol) events.push(e);
+    }
+  };
+
+  qs.addEventListener(listener);
+
+  const promise = new Promise<any[]>((resolve) => {
+    setTimeout(() => {
+      qs.removeEventListener(listener);
+      inflightQuoteRequests.delete(symbol);
+      resolve(events);
+    }, timeoutMs);
+  });
+
+  inflightQuoteRequests.set(symbol, promise);
+  return { promise, isNew: true };
+}
+
 function candleKey(entry: CandleSubscriptionEntry): string {
   return `${entry.symbol}|${entry.fromTime}|${entry.periodMinutes}|${String(entry.candleType)}`;
 }

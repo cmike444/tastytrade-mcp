@@ -6,6 +6,7 @@ import {
   unregisterQuoteSubscriptions,
   registerCandleSubscription,
   unregisterCandleSubscription,
+  getOrCreateInflightQuote,
 } from "../tastytrade-client.js";
 import { formatApiError } from "./error-utils.js";
 import { coerceToArray } from "./schema-utils.js";
@@ -275,29 +276,35 @@ export function registerMarketDataTools(server: McpServer) {
           }
         }
 
-        const collectedEvents: any[] = [];
-
-        const listener = (events: any[]) => {
-          for (const event of events) {
-            collectedEvents.push(event);
-          }
-        };
-
-        client.quoteStreamer.addEventListener(listener);
-
         const wasConnected = (client.quoteStreamer as any).isConnected;
         if (!wasConnected) {
           await client.quoteStreamer.connect();
         }
 
-        registerQuoteSubscriptions(streamerSymbols);
-        try {
-          client.quoteStreamer.subscribe(streamerSymbols);
-          await new Promise(resolve => setTimeout(resolve, timeoutMs));
-        } finally {
-          unregisterQuoteSubscriptions(streamerSymbols);
-          client.quoteStreamer.removeEventListener(listener);
-        }
+        // Per-symbol coalescing: if a concurrent request is already fetching
+        // the same streamer symbol we attach to its promise instead of opening
+        // a redundant subscription.
+        const perSymbolPromises = streamerSymbols.map((sym) => {
+          const { promise, isNew } = getOrCreateInflightQuote(sym, timeoutMs, client.quoteStreamer);
+          if (isNew) {
+            registerQuoteSubscriptions([sym]);
+            try {
+              client.quoteStreamer.subscribe([sym]);
+            } catch (err) {
+              // subscribe() failed before the streamer could register the
+              // symbol — clean up the refcount immediately so it doesn't leak.
+              unregisterQuoteSubscriptions([sym]);
+              throw err;
+            }
+            return promise.then((events: any[]) => {
+              unregisterQuoteSubscriptions([sym]);
+              return events;
+            });
+          }
+          return promise;
+        });
+
+        const collectedEvents = (await Promise.all(perSymbolPromises)).flat();
 
         if (collectedEvents.length === 0) {
           return { content: [{ type: "text" as const, text: `No quote data received for ${symbols.join(', ')} within ${timeoutMs}ms. Market may be closed or symbols may be invalid.` }] };

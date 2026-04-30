@@ -1,3 +1,5 @@
+import { getSkillCacheStats } from "./resources/skill-resources.js";
+
 const startTime = Date.now();
 
 interface ToolStats {
@@ -72,5 +74,6 @@ export function getMetricsSnapshot() {
     },
     tools,
     http,
+    skillCache: getSkillCacheStats(),
   };
 }

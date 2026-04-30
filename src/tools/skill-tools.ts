@@ -39,17 +39,20 @@ export function registerSkillTools(server: McpServer) {
       listReferences: z.boolean().optional().describe(
         "If true, return the list of available reference file names for this skill instead of content."
       ),
+      force_reload: z.boolean().optional().describe(
+        "If true, bypass the in-memory cache and re-read the skill from disk. Use this when a skill is known to have just been updated."
+      ),
     },
     READ_ONLY,
-    async ({ name, section, listReferences }) => {
+    async ({ name, section, listReferences, force_reload }) => {
       const dirName = name ?? "tastytrade";
 
       if (listReferences) {
-        const refs = listSkillReferences(dirName);
+        const refs = listSkillReferences(dirName, force_reload ?? false);
         return { content: [{ type: "text" as const, text: JSON.stringify(refs) }] };
       }
 
-      const content = getSkillContent(dirName, section);
+      const content = getSkillContent(dirName, section, force_reload ?? false);
       if (content === null) {
         return {
           content: [{ type: "text" as const, text: `Skill '${dirName}' not found. Use list_skills to see available skills.` }],
