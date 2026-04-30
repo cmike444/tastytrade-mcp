@@ -12,6 +12,7 @@
     "dev": "tsc && node build/index.js",
     "dev:http": "tsc && MCP_TRANSPORT=http node build/index.js",
     "test:hooks": "python hooks/tests/run_tests.py",
+    "test:smoke:futures": "tsc && node build/tests/smoke-futures-quotes.js",
     "skills:map": "homingo map --skills-dir ./skills --no-open",
     "skills:scan": "homingo scan --skills-dir ./skills --no-open",
     "skills:lint": "homingo lint --skills-dir ./skills --dry-run --no-open"

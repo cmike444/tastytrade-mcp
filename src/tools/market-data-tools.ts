@@ -13,6 +13,65 @@ import { renderQuote, renderGreeks, renderMarketMetrics, extractItems } from "./
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
+interface FuturesContract {
+  "active-month"?: boolean;
+  active?: boolean;
+  "streamer-symbol"?: string;
+  streamerSymbol?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Resolve a futures root symbol (e.g. /CL) to its active front-month
+ * streamer symbol (e.g. /CLM26:XNYM) using the TastyTrade instruments API.
+ *
+ * `getSingleFuture` expects a fully-qualified contract symbol (e.g. /CLM5),
+ * not a root symbol, so it returns 404 for roots.  Instead we call
+ * `getFutures` filtered by product-code and select the active-month contract.
+ *
+ * Returns the streamer symbol string, or throws on failure.
+ */
+async function resolveFuturesStreamerSymbol(client: ReturnType<typeof getClient>, rootSymbol: string): Promise<string> {
+  const productCode = rootSymbol.replace(/^\//, "");
+  let raw: unknown;
+  try {
+    raw = await client.instrumentsService.getFutures({ "product-code": productCode });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Could not fetch futures contracts for ${rootSymbol}: ${msg}`);
+  }
+  // The SDK unwraps the response, but defensively accept both an array and a
+  // wrapped shape ({ items: [...] } or { data: { items: [...] } }).
+  let contracts: FuturesContract[];
+  if (Array.isArray(raw)) {
+    contracts = raw as FuturesContract[];
+  } else if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    const items = Array.isArray(obj["items"]) ? obj["items"] :
+                  Array.isArray((obj["data"] as Record<string, unknown> | undefined)?.["items"])
+                    ? (obj["data"] as Record<string, unknown>)["items"] as unknown[]
+                    : null;
+    if (items) {
+      contracts = items as FuturesContract[];
+    } else {
+      throw new Error(`Unexpected response shape from getFutures for ${rootSymbol}: ${JSON.stringify(raw).slice(0, 200)}`);
+    }
+  } else {
+    throw new Error(`No futures contracts returned for product code ${productCode} (symbol ${rootSymbol})`);
+  }
+  if (contracts.length === 0) {
+    throw new Error(`No futures contracts returned for product code ${productCode} (symbol ${rootSymbol})`);
+  }
+  // Prefer the active front-month contract
+  const frontMonth = contracts.find(c => c["active-month"] === true);
+  const contract = frontMonth ?? contracts.find(c => c["active"] === true) ?? contracts[0];
+  const resolved: string | undefined = contract?.["streamer-symbol"] ?? contract?.streamerSymbol;
+  if (!resolved) {
+    throw new Error(`No streamer-symbol field found for ${rootSymbol} (product code ${productCode})`);
+  }
+  return resolved;
+}
+
 type DetailTier = "summary" | "standard" | "full";
 
 const CANDLE_SUMMARY_FIELDS = ["eventSymbol", "time", "open", "high", "low", "close"];
@@ -194,24 +253,17 @@ export function registerMarketDataTools(server: McpServer) {
       try {
         const client = getClient();
 
-        // Resolve futures root symbols (e.g. /CL) to their active streamer symbol (e.g. /CLN5:XCME)
+        // Resolve futures root symbols (e.g. /CL) to their active streamer symbol (e.g. /CLM26:XNYM)
         const symbolMap = new Map<string, string>(); // streamerSymbol -> originalSymbol
         const streamerSymbols: string[] = [];
         for (const sym of symbols) {
           if (sym.startsWith("/")) {
-            let instrument: any;
+            let resolved: string;
             try {
-              instrument = await client.instrumentsService.getSingleFuture(sym);
+              resolved = await resolveFuturesStreamerSymbol(client, sym);
             } catch (err: any) {
               return {
                 content: [{ type: "text" as const, text: `Error: Could not look up futures instrument for ${sym}: ${err?.message ?? err}` }],
-                isError: true,
-              };
-            }
-            const resolved = instrument?.["streamer-symbol"] ?? instrument?.streamerSymbol;
-            if (!resolved) {
-              return {
-                content: [{ type: "text" as const, text: `Error: No streamer symbol found for futures instrument ${sym}. The contract may be expired or unavailable.` }],
                 isError: true,
               };
             }
@@ -253,13 +305,16 @@ export function registerMarketDataTools(server: McpServer) {
 
         // Re-map streamer symbols back to the original user-supplied symbols,
         // and annotate futures events with the resolved streamer symbol.
+        // For Trade events, also expose price as lastPrice for a consistent "last" field.
         const remappedEvents = collectedEvents.map(e => {
           const streamer = e.eventSymbol;
           const original = symbolMap.get(streamer);
+          const isTrade = e.eventType === "Trade";
+          const lastPrice = isTrade && typeof e.price === "number" ? { lastPrice: e.price } : {};
           if (original && original !== streamer) {
-            return { ...e, eventSymbol: original, resolvedStreamerSymbol: streamer };
+            return { ...e, ...lastPrice, eventSymbol: original, resolvedStreamerSymbol: streamer };
           }
-          return e;
+          return isTrade ? { ...e, ...lastPrice } : e;
         });
 
         if (format === "html") {
@@ -292,23 +347,14 @@ export function registerMarketDataTools(server: McpServer) {
 
         let streamerSymbol = symbol;
         if (symbol.startsWith("/")) {
-          let instrument: any;
           try {
-            instrument = await client.instrumentsService.getSingleFuture(symbol);
+            streamerSymbol = await resolveFuturesStreamerSymbol(client, symbol);
           } catch (err: any) {
             return {
               content: [{ type: "text" as const, text: `Error: Could not look up futures instrument for ${symbol}: ${err?.message ?? err}` }],
               isError: true,
             };
           }
-          const resolved = instrument?.["streamer-symbol"] ?? instrument?.streamerSymbol;
-          if (!resolved) {
-            return {
-              content: [{ type: "text" as const, text: `Error: No streamer symbol found for futures instrument ${symbol}. The contract may be expired or unavailable.` }],
-              isError: true,
-            };
-          }
-          streamerSymbol = resolved;
         }
 
         const collectedEvents: any[] = [];
