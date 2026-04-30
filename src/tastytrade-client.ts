@@ -162,7 +162,7 @@ function cancelPendingReconnect(): void {
 }
 
 function scheduleQuoteStreamerReconnect(): void {
-  if (explicitlyDisconnecting || !quoteStreamerConnected || !client) return;
+  if (explicitlyDisconnecting || !client) return;
 
   cancelPendingReconnect();
 
@@ -193,7 +193,7 @@ function scheduleQuoteStreamerReconnect(): void {
   }, delay);
 }
 
-function attachFeedListeners(feed: any, myVersion: number): void {
+function attachFeedListeners(feed: any, myVersion: number, qs: any): void {
   if (listenedFeeds.has(feed)) return;
   listenedFeeds.add(feed);
 
@@ -202,7 +202,10 @@ function attachFeedListeners(feed: any, myVersion: number): void {
     channel.addErrorListener((err: any) => {
       if (err?.message === "Bye" || err?.message === "Reconnect") {
         logger.warn(`[DXLink] Server disconnect signal: ${err.message}. Scheduling reconnect.`);
-        if (myVersion === currentConnectVersion) {
+        if (myVersion === currentConnectVersion && !explicitlyDisconnecting) {
+          // Mark as disconnected so /health reports 503 until reconnect succeeds.
+          quoteStreamerConnected = false;
+          qs.isConnected = false;
           scheduleQuoteStreamerReconnect();
         }
       } else if (err?.message) {
@@ -220,6 +223,9 @@ function attachFeedListeners(feed: any, myVersion: number): void {
         quoteStreamerConnected
       ) {
         logger.warn("[DXLink] Channel closed unexpectedly. Scheduling reconnect.");
+        // Mark as disconnected so /health reports 503 until reconnect succeeds.
+        quoteStreamerConnected = false;
+        qs.isConnected = false;
         scheduleQuoteStreamerReconnect();
       }
     });
@@ -268,9 +274,12 @@ function attachQuoteStreamerHandlers(c: TastytradeClient): void {
     );
 
     quoteStreamerConnected = true;
+    // Keep qs.isConnected in sync so market-data tools can skip the connect()
+    // call on the first request after a successful pre-connect or reconnect.
+    qs.isConnected = true;
     reconnectAttempts = 0;
 
-    attachFeedListeners(qs.dxLinkFeed, myVersion);
+    attachFeedListeners(qs.dxLinkFeed, myVersion, qs);
 
     replaySubscriptions(qs);
   };
@@ -481,6 +490,8 @@ export async function disconnectClient(): Promise<void> {
     explicitlyDisconnecting = true;
     cancelPendingReconnect();
     quoteStreamerConnected = false;
+    // Clear qs.isConnected so market-data tools know to reconnect on next use.
+    (client.quoteStreamer as any).isConnected = false;
     activeQuoteRefCounts.clear();
     activeCandleRefCounts.clear();
     try {
@@ -510,6 +521,30 @@ export function getConnectionStatus() {
     lastKeepaliveAt: lastKeepaliveAt ? new Date(lastKeepaliveAt).toISOString() : null,
     circuitBreaker: getCircuitBreakerStatus(),
   };
+}
+
+/**
+ * Pre-connects the DXLink quote streamer immediately after authentication.
+ * Call this once during server startup (after autoAuthenticate) to eliminate
+ * the cold-start latency that would otherwise occur on the first get_quote call.
+ * No-ops if already connected or if no client is authenticated.
+ */
+export async function preConnectQuoteStreamer(): Promise<void> {
+  if (!client || !isAuthenticated) {
+    logger.warn("[DXLink] preConnectQuoteStreamer: skipping — client not authenticated.");
+    return;
+  }
+  if (quoteStreamerConnected) {
+    logger.info("[DXLink] preConnectQuoteStreamer: already connected, skipping.");
+    return;
+  }
+  logger.info("[DXLink] Pre-connecting quote streamer on startup...");
+  try {
+    await client.quoteStreamer.connect();
+    logger.info("[DXLink] Quote streamer pre-connected successfully. WebSocket is warm.");
+  } catch (err: any) {
+    logger.warn(`[DXLink] Quote streamer pre-connect failed: ${err?.message ?? err}. Will retry on first use.`);
+  }
 }
 
 export function startKeepalive(): () => void {

@@ -7,7 +7,7 @@ import express from "express";
 import { randomUUID } from "node:crypto";
 import { registerAuthTools } from "./tools/auth-tools.js";
 import { registerAccountTools } from "./tools/account-tools.js";
-import { autoAuthenticate, startKeepalive } from "./tastytrade-client.js";
+import { autoAuthenticate, startKeepalive, preConnectQuoteStreamer } from "./tastytrade-client.js";
 import { registerBalancePositionTools } from "./tools/balance-position-tools.js";
 import { registerOrderTools } from "./tools/order-tools.js";
 import { registerInstrumentTools } from "./tools/instrument-tools.js";
@@ -38,6 +38,11 @@ import { recordToolCall, recordHttpRequest, getMetricsSnapshot } from "./metrics
 import { logger } from "./logger.js";
 
 const TOOL_DISCOVERY_MODE = process.env.TOOL_DISCOVERY_MODE === "true";
+const _drainMs = parseInt(process.env.SHUTDOWN_DRAIN_MS || "10000", 10);
+const SHUTDOWN_DRAIN_MS = Number.isFinite(_drainMs) && _drainMs >= 0 ? _drainMs : 10000;
+
+let shuttingDown = false;
+let inFlightMcpRequests = 0;
 
 function createMcpServer(): McpServer {
   const server = new McpServer({
@@ -339,60 +344,89 @@ async function startHttpServer() {
   });
 
   app.get("/health", (_req, res) => {
+    const conn = getConnectionStatus();
+    const healthy = conn.isAuthenticated && conn.quoteStreamerConnected;
     res.set("Cache-Control", "no-store");
-    res.json({ status: "ok", transport: "streamable-http", tools: 43, oauth: true });
+    if (healthy) {
+      res.status(200).json({ status: "ok", auth: true, wsConnected: true });
+    } else {
+      const reason = !conn.isAuthenticated
+        ? "TastyTrade authentication unavailable"
+        : "DXLink WebSocket not connected";
+      res.status(503).json({
+        status: "degraded",
+        auth: conn.isAuthenticated,
+        wsConnected: conn.quoteStreamerConnected,
+        reason,
+      });
+    }
   });
 
   app.post("/mcp", async (req, res) => {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     logger.info(`[MCP] POST sessionId=${sessionId || "none"} method=${req.body?.method || "?"}`);
+
+    if (shuttingDown) {
+      res.status(503).json({ error: "server_shutting_down", message: "Server is shutting down. Please reconnect shortly." });
+      return;
+    }
+
     if (!authenticateRequest(req, res)) return;
 
-    if (sessionId && sessions[sessionId]) {
-      const { transport } = sessions[sessionId];
-      await transport.handleRequest(req, res, req.body);
-      return;
-    }
+    inFlightMcpRequests++;
+    try {
+      if (sessionId && sessions[sessionId]) {
+        const { transport } = sessions[sessionId];
+        await transport.handleRequest(req, res, req.body);
+        return;
+      }
 
-    // Session ID was provided but the server has no record of it (e.g. after a
-    // redeployment that cleared in-memory sessions).  Return a JSON-RPC error
-    // response with HTTP 404 so that spec-compliant clients know to re-initialize.
-    if (sessionId && !sessions[sessionId]) {
-      logger.warn(`[MCP] Session ${sessionId} not found (server restarted?). Client must re-initialize.`);
-      res.status(404).json({
-        jsonrpc: "2.0",
-        id: req.body?.id ?? null,
-        error: { code: -32001, message: "Session not found or expired. Please disconnect and reconnect the MCP integration to start a new session." },
+      // Session ID was provided but the server has no record of it (e.g. after a
+      // redeployment that cleared in-memory sessions).  Return a JSON-RPC error
+      // response with HTTP 404 so that spec-compliant clients know to re-initialize.
+      if (sessionId && !sessions[sessionId]) {
+        logger.warn(`[MCP] Session ${sessionId} not found (server restarted?). Client must re-initialize.`);
+        res.status(404).json({
+          jsonrpc: "2.0",
+          id: req.body?.id ?? null,
+          error: { code: -32001, message: "Session not found or expired. Please disconnect and reconnect the MCP integration to start a new session." },
+        });
+        return;
+      }
+
+      if (!isInitializeRequest(req.body)) {
+        res.status(400).json({ error: "First request must be an initialize request" });
+        return;
+      }
+
+      const newSessionId = randomUUID();
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => newSessionId,
       });
-      return;
+      const server = createMcpServer();
+      await server.connect(transport);
+
+      sessions[newSessionId] = { transport, server, createdAt: Date.now() };
+      logger.info(`[MCP] Session ${newSessionId} created. Active sessions: ${Object.keys(sessions).length}`);
+
+      transport.onclose = () => {
+        delete sessions[newSessionId];
+        logger.info(`[MCP] Session ${newSessionId} closed. Active sessions: ${Object.keys(sessions).length}`);
+      };
+
+      await transport.handleRequest(req, res, req.body);
+    } finally {
+      inFlightMcpRequests--;
     }
-
-    if (!isInitializeRequest(req.body)) {
-      res.status(400).json({ error: "First request must be an initialize request" });
-      return;
-    }
-
-    const newSessionId = randomUUID();
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => newSessionId,
-    });
-    const server = createMcpServer();
-    await server.connect(transport);
-
-    sessions[newSessionId] = { transport, server, createdAt: Date.now() };
-    logger.info(`[MCP] Session ${newSessionId} created. Active sessions: ${Object.keys(sessions).length}`);
-
-    transport.onclose = () => {
-      delete sessions[newSessionId];
-      logger.info(`[MCP] Session ${newSessionId} closed. Active sessions: ${Object.keys(sessions).length}`);
-    };
-
-    await transport.handleRequest(req, res, req.body);
   });
 
   app.get("/mcp", async (req, res) => {
     const sessionId = req.headers["mcp-session-id"] as string;
     logger.info(`[MCP] GET sessionId=${sessionId || "none"}`);
+    if (shuttingDown) {
+      res.status(503).json({ error: "server_shutting_down", message: "Server is shutting down. Please reconnect shortly." });
+      return;
+    }
     if (!authenticateRequest(req, res)) return;
     const session = sessions[sessionId];
 
@@ -424,6 +458,10 @@ async function startHttpServer() {
   });
 
   app.delete("/mcp", async (req, res) => {
+    if (shuttingDown) {
+      res.status(503).json({ error: "server_shutting_down", message: "Server is shutting down. Please reconnect shortly." });
+      return;
+    }
     if (!authenticateRequest(req, res)) return;
 
     res.set("Cache-Control", "no-store");
@@ -468,24 +506,49 @@ async function startStdioServer() {
 }
 
 async function main() {
+  let authSucceeded = false;
   try {
     const result = await autoAuthenticate();
+    authSucceeded = true;
     logger.info(`[TastyTrade] ${result}`);
   } catch (error: any) {
     logger.warn(`[TastyTrade] Auto-authentication failed: ${error.message}`);
     logger.warn("[TastyTrade] Server will start without TastyTrade connection. Use check_auth_status tool to retry.");
   }
 
-  const cancelKeepalive = startKeepalive();
-
-  function shutdown(signal: string) {
-    logger.info(`[Process] Received ${signal}, shutting down.`);
-    cancelKeepalive();
-    process.exit(0);
+  // Pre-connect the DXLink WebSocket immediately after successful auth so the
+  // first get_quote call doesn't pay the connection-establishment cost.
+  if (authSucceeded) {
+    await preConnectQuoteStreamer();
   }
 
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
-  process.on("SIGINT", () => shutdown("SIGINT"));
+  const cancelKeepalive = startKeepalive();
+
+  function gracefulShutdown(signal: string) {
+    logger.info(`[Process] Received ${signal}, beginning graceful shutdown (drain window: ${SHUTDOWN_DRAIN_MS}ms).`);
+    shuttingDown = true;
+    cancelKeepalive();
+
+    const deadline = Date.now() + SHUTDOWN_DRAIN_MS;
+
+    function checkDrain() {
+      if (inFlightMcpRequests <= 0) {
+        logger.info("[Process] All in-flight requests drained. Exiting.");
+        process.exit(0);
+      }
+      if (Date.now() >= deadline) {
+        logger.warn(`[Process] Drain timeout exceeded with ${inFlightMcpRequests} request(s) still in flight. Forcing exit.`);
+        process.exit(0);
+      }
+      logger.info(`[Process] Waiting for ${inFlightMcpRequests} in-flight request(s) to complete...`);
+      setTimeout(checkDrain, 500);
+    }
+
+    checkDrain();
+  }
+
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
   if (MODE === "http") {
     await startHttpServer();
