@@ -76,13 +76,22 @@ Submit a single-leg order. See `order-execution.md` for JSON templates.
 ### `create_complex_order(accountNumber, orderJson)`
 Submit multi-leg orders: spreads, straddles, condors, OCO, OTOCO.
 - Use for any order with 2+ legs or conditional triggers
+- **Always run `complex_order_dry_run` first to validate**
+
+### `complex_order_dry_run(accountNumber, orderJson)`
+**Validate a multi-leg complex order without placing it.** Use this before `create_complex_order`.
+- Accepts `Net Debit`, `Net Credit`, `Limit`, and `Market` order types
+- Returns: `buying-power-effect`, `fee-calculation`, warnings, errors, or margin calls
+- **MANDATORY before every `create_complex_order` call**
 
 ### `order_dry_run(accountNumber, orderJson)`
-**Validate without placing.** Returns:
+**Validate a single-leg simple order without placing it.** Returns:
 - `buying-power-effect`
 - `fee-calculation`
 - Warnings, errors, or margin calls
-- **MANDATORY before every real order**
+- **Use ONLY for simple order types: Limit, Market, Stop, Stop Limit, Notional Market**
+- For multi-leg orders with Net Debit / Net Credit, use `complex_order_dry_run` instead
+- **MANDATORY before every `create_order` call**
 
 ### `query_orders(scope, accountNumber?, orderId?, customerId?, status?, perPage?, pageOffset?)`
 Consolidated order query. The `scope` enum selects the operation:
@@ -319,7 +328,7 @@ Search for tradeable symbols by name or keyword. *(Standalone tool — not part 
 2. **Wrong price sign**: Debit = negative, credit = positive for the `price` field
 3. **Wrong action for futures**: Futures use `"Buy"` / `"Sell"`, NOT `"Buy to Open"` / `"Sell to Close"`
 4. **Option chain without filtering**: Always use `limit` and `detail` params, then pipe to `filter_chain.py` — raw output will overflow context
-5. **Skipping dry run**: `order_dry_run` is mandatory — catches bad order JSON before it costs real money
+5. **Skipping dry run**: Use `order_dry_run` before `create_order` (single-leg simple orders); use `complex_order_dry_run` before `create_complex_order` (multi-leg orders). Skipping causes bad orders to cost real money. Using `order_dry_run` for multi-leg / Net Debit / Net Credit orders will return a 400 error — always use `complex_order_dry_run` for those.
 6. **Missing earnings check**: Always check `earnings-next-date` from `get_market_metrics` (use `detail="full"`) before entering
 7. **Crypto time-in-force**: Crypto must use `IOC` — other values will be rejected
 8. **Compact chain has no Greeks/prices**: `get_instrument(type="compact_option_chain")` only returns OCC symbol strings. Use `get_options_greeks(optionSymbols=[...])` to get delta/IV/bid/ask for specific strikes. Never try to access `o['delta']` or `o['strike-price']` on items from the compact chain response.

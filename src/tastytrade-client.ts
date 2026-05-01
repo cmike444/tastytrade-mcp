@@ -554,6 +554,35 @@ export async function authenticateOAuth(config: TastyTradeOAuthConfig): Promise<
       oauthScopes: config.oauthScopes,
     } as any);
 
+    // Extend orderService with postComplexOrderDryRun so tools can preflight
+    // multi-leg orders via POST /accounts/{id}/complex-orders/dry-run.
+    // This endpoint is absent from the library but the service exposes httpClient.
+    // We inline the library's extractResponseData logic (data.data.items >
+    // data.data > raw) to avoid importing the non-exported internal subpath.
+    {
+      const svc = client.orderService as any;
+      if (typeof svc.httpClient?.postData !== "function") {
+        throw new Error(
+          "[TastyTrade] orderService.httpClient.postData is not available — SDK internals have changed. " +
+          "complex_order_dry_run patch cannot be applied."
+        );
+      }
+      if (typeof svc.postComplexOrderDryRun !== "function") {
+        svc.postComplexOrderDryRun = async function(accountNumber: string, order: any) {
+          const response = await this.httpClient.postData(
+            `/accounts/${accountNumber}/complex-orders/dry-run`, order, {}
+          );
+          // Mirror the library's extractResponseData logic:
+          //   items list  →  data.data.items
+          //   single obj  →  data.data
+          //   fallback    →  raw response
+          if (response?.data?.data?.items !== undefined) return response.data.data.items;
+          if (response?.data?.data !== undefined) return response.data.data;
+          return response;
+        };
+      }
+    }
+
     attachQuoteStreamerHandlers(client);
 
     const accounts = await client.accountsAndCustomersService.getCustomerAccounts();

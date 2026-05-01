@@ -191,7 +191,7 @@ const TOOL_REGISTRY: ToolEntry[] = [
   },
   {
     name: "order_dry_run",
-    description: "Validate an order without actually placing it. Returns preflight information including fees, buying power effect, and warnings.",
+    description: "Validate a single-leg simple order without placing it. Use ONLY for simple order types (Limit, Market, Stop, Stop Limit, Notional Market). For multi-leg complex orders with Net Debit / Net Credit, use complex_order_dry_run instead. Returns preflight information including fees, buying power effect, and warnings.",
     category: "Orders",
     inputSchema: {
       type: "object",
@@ -350,8 +350,41 @@ const TOOL_REGISTRY: ToolEntry[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
   },
   {
+    name: "complex_order_dry_run",
+    description: "Validate a complex (multi-leg) order without placing it. Supports Net Debit, Net Credit, Limit, and Market order types. Use before create_complex_order for spreads, straddles, strangles, condors, calendars, and any order with 2+ legs. Returns preflight information including fees, buying power effect, and warnings.",
+    category: "Orders",
+    inputSchema: {
+      type: "object",
+      properties: {
+        accountNumber: { type: "string", description: "The account number" },
+        "time-in-force": { type: "string", description: "Time in force (e.g. 'Day', 'GTC')" },
+        "order-type": { type: "string", description: "Order type (e.g. 'Limit', 'Market', 'Net Credit', 'Net Debit')" },
+        price: { type: "number", description: "Net price for the complex order" },
+        "price-effect": { type: "string", description: "Price effect: 'Debit' or 'Credit'" },
+        legs: {
+          type: "array",
+          description: "Array of order legs for the complex order",
+          items: {
+            type: "object",
+            properties: {
+              "instrument-type": { type: "string", description: "Instrument type (e.g. 'Equity Option', 'Future Option')" },
+              symbol: { type: "string", description: "Symbol for the instrument" },
+              action: { type: "string", description: "Order action (e.g. 'Buy to Open', 'Sell to Open', 'Buy to Close', 'Sell to Close')" },
+              quantity: { type: "number", description: "Number of contracts" },
+              "ratio-quantity": { type: "number", description: "Ratio quantity for this leg" },
+            },
+            required: ["instrument-type", "symbol", "action", "quantity"],
+          },
+        },
+        source: { type: "string", description: "Optional source identifier" },
+      },
+      required: ["accountNumber", "time-in-force", "order-type", "legs"],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
     name: "create_complex_order",
-    description: "Create a complex (multi-leg) order such as spreads, straddles, etc.",
+    description: "Create a complex (multi-leg) order such as spreads, straddles, etc. Always run complex_order_dry_run first to validate before submitting.",
     category: "Orders",
     inputSchema: {
       type: "object",

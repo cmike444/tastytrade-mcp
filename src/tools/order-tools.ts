@@ -123,7 +123,13 @@ export function registerOrderTools(server: McpServer) {
 
   server.tool(
     "order_dry_run",
-    "Validate an order without actually placing it. Returns preflight information including fees, buying power effect, and warnings.",
+    [
+      "Validate a single-leg simple order without actually placing it.",
+      "Use ONLY for simple order types: Limit, Market, Stop, Stop Limit, Notional Market.",
+      "For multi-leg complex orders (spreads, straddles, condors, calendars) with Net Debit / Net Credit order types,",
+      "use complex_order_dry_run instead — this endpoint rejects those order types.",
+      "Returns preflight information including fees, buying power effect, and warnings.",
+    ].join(" "),
     {
       accountNumber: z.string().describe("The account number"),
       "time-in-force": OrderSchema.shape["time-in-force"],
@@ -255,8 +261,40 @@ export function registerOrderTools(server: McpServer) {
   );
 
   server.tool(
+    "complex_order_dry_run",
+    [
+      "Validate a complex (multi-leg) order without placing it.",
+      "Supports Net Debit, Net Credit, Limit, and Market order types.",
+      "Use this before create_complex_order for spreads, straddles, strangles, condors, calendars, and any order with 2+ legs.",
+      "Returns preflight information including fees, buying power effect, and warnings.",
+    ].join(" "),
+    {
+      accountNumber: z.string().describe("The account number"),
+      "time-in-force": ComplexOrderSchema.shape["time-in-force"],
+      "order-type": ComplexOrderSchema.shape["order-type"],
+      price: ComplexOrderSchema.shape.price,
+      "price-effect": ComplexOrderSchema.shape["price-effect"],
+      legs: ComplexOrderSchema.shape.legs,
+      source: ComplexOrderSchema.shape["source"],
+    },
+    READ_ONLY,
+    async ({ accountNumber, ...orderFields }) => {
+      try {
+        const order = orderFields;
+        const result = await (getClient().orderService as any).postComplexOrderDryRun(accountNumber, order);
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
     "create_complex_order",
-    "Create a complex (multi-leg) order such as spreads, straddles, etc.",
+    [
+      "Create a complex (multi-leg) order such as spreads, straddles, etc.",
+      "Always run complex_order_dry_run first to validate the order before submitting.",
+    ].join(" "),
     {
       accountNumber: z.string().describe("The account number"),
       "time-in-force": ComplexOrderSchema.shape["time-in-force"],

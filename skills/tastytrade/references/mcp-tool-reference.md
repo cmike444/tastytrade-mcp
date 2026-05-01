@@ -12,7 +12,7 @@
 4. [Tool Reference](#tool-reference)
    - [Auth (4 tools)](#auth-tools)
    - [Account (5 tools)](#account-tools)
-   - [Orders (10 tools)](#order-tools)
+   - [Orders (11 tools)](#order-tools)
    - [Market Data (7 tools)](#market-data-tools)
    - [Instruments (2 tools)](#instrument-tools)
    - [Watchlists (2 tools)](#watchlist-tools)
@@ -265,7 +265,7 @@ Unified order query across five scopes:
 ```
 
 #### `order_dry_run`
-Validate an order before submitting. Always run this first.
+Validate a **single-leg simple** order before submitting. Use ONLY for `Limit`, `Market`, `Stop`, `Stop Limit`, `Notional Market` order types. For multi-leg complex orders or `Net Debit` / `Net Credit` types, use `complex_order_dry_run` instead.
 - **Returns:** fees, buying-power effect, warnings, fill estimate
 - **Params:** `accountNumber`, `time-in-force`, `order-type`, `price`, `price-effect`, `legs[]`
 
@@ -286,13 +286,35 @@ Validate an order before submitting. Always run this first.
 }
 ```
 
+#### `complex_order_dry_run`
+Validate a **complex (multi-leg)** order before submitting. Supports `Net Debit`, `Net Credit`, `Limit`, and `Market` order types. Always run this before `create_complex_order` for spreads, straddles, strangles, condors, calendars, and any order with 2+ legs.
+- **Returns:** fees, buying-power effect, warnings, fill estimate
+- **Params:** `accountNumber`, `time-in-force`, `order-type`, `price`, `price-effect`, `legs[]`, `source` (optional)
+
+**4-leg iron condor example (Net Credit):**
+```json
+{
+  "accountNumber": "5WX12345",
+  "time-in-force": "Day",
+  "order-type": "Net Credit",
+  "price": 2.50,
+  "price-effect": "Credit",
+  "legs": [
+    { "instrument-type": "Equity Option", "symbol": "SPY   250117C00465000", "action": "Buy to Open", "quantity": 1 },
+    { "instrument-type": "Equity Option", "symbol": "SPY   250117C00460000", "action": "Sell to Open", "quantity": 1 },
+    { "instrument-type": "Equity Option", "symbol": "SPY   250117P00445000", "action": "Sell to Open", "quantity": 1 },
+    { "instrument-type": "Equity Option", "symbol": "SPY   250117P00440000", "action": "Buy to Open", "quantity": 1 }
+  ]
+}
+```
+
 #### `create_order`
 Submit the order after reviewing the dry-run output.
 - **Params:** identical to `order_dry_run`
 
 #### `create_complex_order`
-Multi-leg spread/combo in one order.
-- **Params:** same as `create_order` plus optional `source`
+Multi-leg spread/combo in one order. Always run `complex_order_dry_run` first to validate.
+- **Params:** same as `complex_order_dry_run` plus optional `source`
 - **Use for:** spreads, straddles, iron condors, calendars
 
 #### `cancel_order` / `cancel_complex_order`
@@ -552,7 +574,9 @@ Resources are read-only data endpoints that return live data without consuming t
 **Always follow this three-step protocol to avoid unintended trades:**
 
 ### Step 1 — Dry Run
-Call `order_dry_run` (or `replacement_order_dry_run`) with your order parameters.
+- **Single-leg simple orders** (Limit, Market, Stop, Stop Limit, Notional Market): call `order_dry_run`
+- **Multi-leg complex orders** (spreads, straddles, condors, calendars, Net Debit / Net Credit): call `complex_order_dry_run`
+- **Replacement orders**: call `replacement_order_dry_run`
 
 Review:
 - `fees` — commissions and exchange fees
@@ -567,7 +591,7 @@ Confirm the numbers make sense:
 - Are there any warnings that require acknowledgment?
 
 ### Step 3 — Submit
-Call `create_order` (or `replace_order`) with identical parameters.
+Call `create_order` (single-leg), `create_complex_order` (multi-leg), or `replace_order` (replacement) with identical parameters.
 
 **Time-in-force options:**
 - `Day` — expires at market close

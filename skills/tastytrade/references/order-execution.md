@@ -4,7 +4,7 @@
 
 - **Price sign**: negative = debit (you pay to open), positive = credit (you receive to open)
 - **JSON keys use dashes**: `instrument-type`, `time-in-force`, `order-type` (not underscores)
-- **ALWAYS run `order_dry_run` first** — confirm buying power effect and fee estimate before submitting
+- **ALWAYS run a dry run first** — use `order_dry_run` for single-leg simple orders; use `complex_order_dry_run` for multi-leg orders (spreads, condors, straddles, calendars) and Net Debit / Net Credit types
 - **Never skip the startup sequence** — account balances + positions + live orders before every order
 
 ---
@@ -172,7 +172,7 @@ Example: AAPL Jan 19 2024 $150 call → `AAPL 240119C00150000`
 
 ## Multi-Leg Complex Order Templates
 
-Use `create_complex_order` for all multi-leg strategies. The `legs` array drives simultaneous execution.
+Use `create_complex_order` for all multi-leg strategies. Always run `complex_order_dry_run` first (not `order_dry_run`) — multi-leg and Net Debit / Net Credit orders are rejected by the simple order dry-run endpoint. The `legs` array drives simultaneous execution.
 
 ### Vertical Spread (credit put spread example)
 ```json
@@ -383,7 +383,7 @@ Check `status` field: `Received` → `Routed` → `Filled` / `Cancelled`
 
 ## Strategy-Specific Order Templates
 
-Use these templates as the starting point for each strategy's typical entry order. Substitute actual symbols, strikes, expiries, and prices. Always run `order_dry_run` before submitting.
+Use these templates as the starting point for each strategy's typical entry order. Substitute actual symbols, strikes, expiries, and prices. Always run `complex_order_dry_run` before submitting multi-leg orders; use `order_dry_run` only for single-leg simple orders.
 
 ---
 
@@ -773,9 +773,17 @@ Same structure as VRP Short Straddle OTOCO above. Use next-day expiry for earnin
 
 ## Dry Run — Always Run First
 
+**Single-leg simple orders** (Limit, Market, Stop, Stop Limit, Notional Market):
 ```
 order_dry_run(accountNumber, orderJson)
 ```
+
+**Multi-leg complex orders** (spreads, straddles, strangles, condors, calendars — including Net Debit / Net Credit):
+```
+complex_order_dry_run(accountNumber, orderJson)
+```
+
+> Do NOT use `order_dry_run` for multi-leg or Net Debit / Net Credit orders — the API returns a 400 error. Always route multi-leg preflight through `complex_order_dry_run`.
 
 Review the response for:
 - `buying-power-effect` — impact on available capital
