@@ -34,7 +34,7 @@ import {
 } from "./oauth-provider.js";
 import { renderAuthorizationPage } from "./auth-page.js";
 import { getConnectionStatus } from "./tastytrade-client.js";
-import { recordToolCall, recordHttpRequest, getMetricsSnapshot } from "./metrics.js";
+import { recordToolCall, recordHttpRequest, getMetricsSnapshot, initMetrics, startMetricsPersistence } from "./metrics.js";
 import { logger } from "./logger.js";
 
 const TOOL_DISCOVERY_MODE = process.env.TOOL_DISCOVERY_MODE === "true";
@@ -44,10 +44,13 @@ const SHUTDOWN_DRAIN_MS = Number.isFinite(_drainMs) && _drainMs >= 0 ? _drainMs 
 let shuttingDown = false;
 let inFlightMcpRequests = 0;
 
+const SERVER_INSTRUCTIONS = `Before making any tool calls, load the skill guide by calling read_skill with no arguments. It maps every tool to its correct usage pattern and documents common pitfalls. Skipping this step leads to incorrect parameter shapes and avoidable errors.`;
+
 function createMcpServer(): McpServer {
   const server = new McpServer({
     name: "tastytrade-mcp-server",
     version: "1.0.0",
+    instructions: SERVER_INSTRUCTIONS,
   });
 
   // Wrap server.tool() so every registered handler is transparently instrumented
@@ -506,6 +509,11 @@ async function startStdioServer() {
 }
 
 async function main() {
+  // Load persisted metrics counters from disk so call counts and latency
+  // survive server restarts, then start the periodic write-back timer.
+  await initMetrics();
+  startMetricsPersistence();
+
   let authSucceeded = false;
   try {
     const result = await autoAuthenticate();

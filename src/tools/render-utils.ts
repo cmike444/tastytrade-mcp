@@ -449,3 +449,105 @@ export function extractItems(data: any): any[] {
   if (data != null && typeof data === "object") return [data];
   return [];
 }
+
+export function renderCandlestick(candles: any[], symbol: string): string {
+  if (candles.length === 0) {
+    return wrap(`<div class="card"><div class="card-title">Candlestick — ${esc(symbol)}</div><p style="color:var(--muted);margin-top:8px">No candle data available.</p></div>`);
+  }
+
+  // Sort by time ascending
+  const sorted = [...candles].sort((a, b) => Number(a.time ?? 0) - Number(b.time ?? 0));
+
+  const opens = sorted.map(c => Number(c.open ?? c.openPrice ?? 0));
+  const highs = sorted.map(c => Number(c.high ?? c.highPrice ?? 0));
+  const lows = sorted.map(c => Number(c.low ?? c.lowPrice ?? 0));
+  const closes = sorted.map(c => Number(c.close ?? c.closePrice ?? 0));
+  const volumes = sorted.map(c => Number(c.volume ?? c.dayVolume ?? 0));
+  const times = sorted.map(c => {
+    const t = c.time ?? c.dateTime;
+    if (t == null) return "";
+    const d = new Date(typeof t === "number" ? t : t);
+    if (isNaN(d.getTime())) return String(t).slice(0, 10);
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  });
+
+  const n = sorted.length;
+  const allHigh = Math.max(...highs);
+  const allLow = Math.min(...lows);
+  const priceRange = allHigh - allLow || 1;
+  const maxVol = Math.max(...volumes) || 1;
+
+  // Chart dimensions
+  const chartW = 700;
+  const chartH = 260;
+  const volH = 40;
+  const padL = 72, padR = 12, padT = 12, padB = 36, volGap = 6;
+  const priceAreaH = chartH - padT - padB - volH - volGap;
+  const candleW = Math.max(2, Math.floor((chartW - padL - padR) / n) - 2);
+
+  const xOf = (i: number) => padL + (i + 0.5) * ((chartW - padL - padR) / n);
+  const yPrice = (v: number) => padT + priceAreaH - ((v - allLow) / priceRange) * priceAreaH;
+  const yVolBase = padT + priceAreaH + volGap + volH;
+  const yVolTop = (v: number) => yVolBase - (v / maxVol) * volH;
+
+  // Price grid lines (4 lines)
+  const gridCount = 4;
+  const priceGridSvg = Array.from({ length: gridCount + 1 }, (_, k) => {
+    const y = padT + (k / gridCount) * priceAreaH;
+    const v = allHigh - (k / gridCount) * priceRange;
+    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${chartW - padR}" y2="${y.toFixed(1)}" stroke="#2a2d3a" stroke-width="1"/>
+<text x="${padL - 6}" y="${(y + 4).toFixed(1)}" fill="#8a8f9e" font-size="10" text-anchor="end">${fmt(v)}</text>`;
+  }).join("\n");
+
+  // Candle bodies + wicks + volume bars
+  const candlesSvg = sorted.map((_, i) => {
+    const o = opens[i], h = highs[i], l = lows[i], c = closes[i], v = volumes[i];
+    const bullish = c >= o;
+    const color = bullish ? "#26a69a" : "#ef5350";
+    const bodyTop = yPrice(Math.max(o, c));
+    const bodyBot = yPrice(Math.min(o, c));
+    const bodyH = Math.max(1, bodyBot - bodyTop);
+    const cx = xOf(i);
+    const halfW = Math.max(1, (candleW - 1) / 2);
+
+    const wick = `<line x1="${cx.toFixed(1)}" y1="${yPrice(h).toFixed(1)}" x2="${cx.toFixed(1)}" y2="${yPrice(l).toFixed(1)}" stroke="${color}" stroke-width="1"/>`;
+    const body = `<rect x="${(cx - halfW).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${(halfW * 2).toFixed(1)}" height="${bodyH.toFixed(1)}" fill="${color}" opacity="${bullish ? 1 : 0.85}"/>`;
+
+    const vTop = yVolTop(v);
+    const vol = `<rect x="${(cx - halfW).toFixed(1)}" y="${vTop.toFixed(1)}" width="${(halfW * 2).toFixed(1)}" height="${(yVolBase - vTop).toFixed(1)}" fill="${color}" opacity="0.4"/>`;
+
+    return wick + body + vol;
+  }).join("\n");
+
+  // X-axis labels (up to 8 evenly spaced)
+  const labelStep = Math.max(1, Math.floor(n / 8));
+  const xLabelsSvg = times
+    .map((lbl, i) => ({ lbl, i }))
+    .filter(({ i }) => i % labelStep === 0 || i === n - 1)
+    .map(({ lbl, i }) => `<text x="${xOf(i).toFixed(1)}" y="${(padT + priceAreaH + volGap + volH + 18).toFixed(1)}" fill="#8a8f9e" font-size="10" text-anchor="middle">${esc(lbl)}</text>`)
+    .join("\n");
+
+  const firstClose = closes[0];
+  const lastClose = closes[n - 1];
+  const chg = lastClose - firstClose;
+  const chgPct = firstClose !== 0 ? (chg / Math.abs(firstClose)) * 100 : 0;
+  const chgClass = chg >= 0 ? "gain" : "loss";
+
+  const totalVol = volumes.reduce((a, b) => a + b, 0);
+
+  return wrap(`<div class="chart-wrap">
+  <div class="chart-header">
+    <div class="chart-stat"><span class="chart-stat-label">${esc(symbol)}</span><span class="chart-stat-value">${fmt(lastClose)}</span></div>
+    <div class="chart-stat"><span class="chart-stat-label">Change</span><span class="chart-stat-value ${chgClass}">${chg >= 0 ? "+" : ""}${fmt(chg)} (${chg >= 0 ? "+" : ""}${fmtPct(chgPct)})</span></div>
+    <div class="chart-stat"><span class="chart-stat-label">High</span><span class="chart-stat-value">${fmt(allHigh)}</span></div>
+    <div class="chart-stat"><span class="chart-stat-label">Low</span><span class="chart-stat-value">${fmt(allLow)}</span></div>
+    <div class="chart-stat"><span class="chart-stat-label">Candles</span><span class="chart-stat-value">${n}</span></div>
+    ${totalVol > 0 ? `<div class="chart-stat"><span class="chart-stat-label">Total Vol</span><span class="chart-stat-value">${Number(totalVol).toLocaleString("en-US", { maximumFractionDigits: 0 })}</span></div>` : ""}
+  </div>
+  <svg width="100%" viewBox="0 0 ${chartW} ${chartH + volH}" preserveAspectRatio="none">
+    ${priceGridSvg}
+    ${candlesSvg}
+    ${xLabelsSvg}
+  </svg>
+</div>`);
+}
