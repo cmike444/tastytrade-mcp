@@ -11,7 +11,7 @@ import {
 } from "../tastytrade-client.js";
 import { formatApiError } from "./error-utils.js";
 import { coerceToArray } from "./schema-utils.js";
-import { renderQuote, renderGreeks, renderMarketMetrics, extractItems } from "./render-utils.js";
+import { renderQuote, renderGreeks, renderMarketMetrics, renderCandlestick, extractItems } from "./render-utils.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
@@ -70,6 +70,35 @@ async function resolveFuturesStreamerSymbol(client: ReturnType<typeof getClient>
   const resolved: string | undefined = contract?.["streamer-symbol"] ?? contract?.streamerSymbol;
   if (!resolved) {
     throw new Error(`No streamer-symbol field found for ${rootSymbol} (product code ${productCode})`);
+  }
+  return resolved;
+}
+
+/**
+ * Resolve a futures option symbol (e.g. ./ESM6 EW1M6 250516C5000) to its
+ * DXLink streamer symbol via `getSingleFutureOption`.
+ *
+ * Futures option symbols begin with "./" and are distinct from outright
+ * futures ("/CL") which are handled by resolveFuturesStreamerSymbol.
+ */
+async function resolveFuturesOptionStreamerSymbol(
+  client: ReturnType<typeof getClient>,
+  symbol: string
+): Promise<string> {
+  let raw: unknown;
+  try {
+    raw = await client.instrumentsService.getSingleFutureOption(symbol);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Could not fetch futures option for ${symbol}: ${msg}`);
+  }
+  const item: Record<string, unknown> = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const resolved =
+    (item["streamer-symbol"] ?? item["streamerSymbol"]) as string | undefined;
+  if (!resolved) {
+    throw new Error(
+      `No streamer-symbol field found for futures option ${symbol}: ${JSON.stringify(raw).slice(0, 200)}`
+    );
   }
   return resolved;
 }
@@ -339,22 +368,34 @@ export function registerMarketDataTools(server: McpServer) {
 
   server.tool(
     "get_candles",
-    "Get candlestick chart data for technical analysis. Retrieves OHLCV candle data via DXLink. Use 'limit' to cap the number of candles returned (default 100, most-recent candles kept). Use 'detail' to control response size: 'summary' returns 6 OHLC fields, 'standard' returns OHLCV+vwap (default), 'full' returns the complete raw payload.",
+    "Get candlestick chart data for technical analysis. Retrieves OHLCV candle data via DXLink. Accepts equity symbols (e.g. 'AAPL'), outright futures root symbols (e.g. '/GCM6', '/ES'), and futures options symbols (e.g. './ESM6 EW1M6 250516C5000'). Use 'limit' to cap the number of candles returned (default 100, most-recent candles kept). Use 'detail' to control response size: 'summary' returns 6 OHLC fields, 'standard' returns OHLCV+vwap (default), 'full' returns the complete raw payload. Use 'format: html' for a visual SVG candlestick chart.",
     {
-      symbol: z.string().describe("The symbol to get candles for (e.g., 'AAPL')"),
+      symbol: z.string().describe("Symbol to get candles for. Equities: 'AAPL'. Futures root: '/GCM6', '/ES'. Futures options: './ESM6 EW1M6 250516C5000'."),
       periodMinutes: z.number().default(5).describe("Candle period in minutes (e.g., 1, 5, 15, 30, 60)"),
       daysBack: z.number().default(1).describe("Number of days of historical data to fetch"),
       timeoutMs: z.number().default(8000).describe("Timeout in milliseconds to wait for candle data (default 8000)"),
       limit: z.number().default(100).describe("Maximum number of candles to return (default 100, most-recent candles kept; set to 0 for no limit)"),
       detail: z.enum(["summary", "standard", "full"]).default("standard").describe("Response detail level: 'summary' (6 fields: symbol, time, open, high, low, close), 'standard' (OHLCV+vwap, default), 'full' (complete raw payload)"),
+      format: z.enum(["json", "html"]).default("json").describe("Output format: 'json' (default) or 'html' for a visual SVG candlestick chart artifact"),
     },
     READ_ONLY,
-    async ({ symbol, periodMinutes, daysBack, timeoutMs, limit, detail }) => {
+    async ({ symbol, periodMinutes, daysBack, timeoutMs, limit, detail, format }) => {
       try {
         const client = getClient();
 
         let streamerSymbol = symbol;
-        if (symbol.startsWith("/")) {
+        if (symbol.startsWith("./")) {
+          // Futures option symbol (e.g. ./ESM6 EW1M6 250516C5000)
+          try {
+            streamerSymbol = await resolveFuturesOptionStreamerSymbol(client, symbol);
+          } catch (err: any) {
+            return {
+              content: [{ type: "text" as const, text: `Error: Could not look up futures option for ${symbol}: ${err?.message ?? err}` }],
+              isError: true,
+            };
+          }
+        } else if (symbol.startsWith("/")) {
+          // Outright futures root symbol (e.g. /CL, /ES)
           try {
             streamerSymbol = await resolveFuturesStreamerSymbol(client, symbol);
           } catch (err: any) {
@@ -414,6 +455,10 @@ export function registerMarketDataTools(server: McpServer) {
         }
         if (limit > 0 && candles.length > limit) {
           candles = candles.slice(candles.length - limit);
+        }
+
+        if (format === "html") {
+          return { content: [{ type: "text" as const, text: renderCandlestick(candles, symbol) }] };
         }
 
         const projected = candles.map(c => projectCandle(c, detail));

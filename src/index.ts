@@ -47,11 +47,10 @@ let inFlightMcpRequests = 0;
 const SERVER_INSTRUCTIONS = `Before making any tool calls, load the skill guide by calling read_skill with no arguments. It maps every tool to its correct usage pattern and documents common pitfalls. Skipping this step leads to incorrect parameter shapes and avoidable errors.`;
 
 function createMcpServer(): McpServer {
-  const server = new McpServer({
-    name: "tastytrade-mcp-server",
-    version: "1.0.0",
-    instructions: SERVER_INSTRUCTIONS,
-  });
+  const server = new McpServer(
+    { name: "tastytrade-mcp-server", version: "1.0.0" },
+    { instructions: SERVER_INSTRUCTIONS }
+  );
 
   // Wrap server.tool() so every registered handler is transparently instrumented
   // with latency and error-rate tracking. The handler is always the last argument
