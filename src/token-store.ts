@@ -36,15 +36,29 @@ let _keyWarningLogged = false;
 
 /**
  * Returns true if TOKEN_ENCRYPTION_KEY is present and exactly 64 hex chars.
- * Logs a one-time warning if absent or malformed. Safe to call repeatedly.
+ * If absent, generates a fresh key, logs it at WARN level with copy-paste
+ * instructions for saving it in Replit Secrets, and returns false.
+ * If malformed, logs a one-time warning. Safe to call repeatedly.
  */
 export function validateEncryptionKey(): boolean {
   const key = process.env["TOKEN_ENCRYPTION_KEY"];
   if (!key) {
     if (!_keyWarningLogged) {
+      const generated = randomBytes(32).toString("hex");
       logger.warn(
-        "[TokenStore] TOKEN_ENCRYPTION_KEY is not set. " +
-        "Refresh token persistence is disabled — auth will continue using the env var token."
+        "[TokenStore] No TOKEN_ENCRYPTION_KEY found — refresh token persistence is disabled.\n" +
+        "\n" +
+        "  To enable encrypted token persistence (so you stay logged in across restarts),\n" +
+        "  add the following key to your Replit Secrets:\n" +
+        "\n" +
+        `    Name:  TOKEN_ENCRYPTION_KEY\n` +
+        `    Value: ${generated}\n` +
+        "\n" +
+        "  Steps: open the Secrets panel (padlock icon in the sidebar), click '+ New Secret',\n" +
+        "  paste the name and value above, then restart the server.\n" +
+        "\n" +
+        "  Alternatively, run:  npm run generate:enc-key\n" +
+        "  to generate a fresh key with step-by-step instructions.\n"
       );
       _keyWarningLogged = true;
     }
