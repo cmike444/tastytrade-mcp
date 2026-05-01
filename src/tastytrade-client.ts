@@ -31,6 +31,29 @@ const listenedFeeds = new WeakSet<object>();
 let lastKeepaliveAt: number | null = null;
 let keepaliveActive = false;
 
+// Module-scope reference to the active DXLinkWebSocketClient so disconnectClient()
+// can explicitly close the underlying socket (no orphaned connections on teardown).
+let activeDxLinkWsClient: any = null;
+
+// Reconnect notification: tool handlers register here to clear stale event
+// buffers when a reconnect occurs mid-collection.
+const reconnectSubscribers: Set<() => void> = new Set();
+
+/**
+ * Register a callback that fires immediately after every successful reconnect.
+ * Returns an unsubscribe function.
+ */
+export function onReconnect(cb: () => void): () => void {
+  reconnectSubscribers.add(cb);
+  return () => reconnectSubscribers.delete(cb);
+}
+
+function notifyReconnect(): void {
+  for (const cb of reconnectSubscribers) {
+    try { cb(); } catch {}
+  }
+}
+
 export interface CandleSubscriptionEntry {
   symbol: string;
   fromTime: number;
@@ -76,8 +99,15 @@ export function getOrCreateInflightQuote(
 
   qs.addEventListener(listener);
 
+  // Clear stale pre-reconnect events if the WebSocket reconnects mid-collection.
+  const unsubReconnect = onReconnect(() => {
+    events.length = 0;
+    logger.info(`[DXLink] Reconnect detected mid-collection for ${symbol} — event buffer cleared.`);
+  });
+
   const promise = new Promise<any[]>((resolve) => {
     setTimeout(() => {
+      unsubReconnect();
       qs.removeEventListener(listener);
       inflightQuoteRequests.delete(symbol);
       resolve(events);
@@ -136,22 +166,26 @@ export function unregisterCandleSubscription(entry: CandleSubscriptionEntry): vo
 function replaySubscriptions(qs: any): void {
   if (activeQuoteRefCounts.size > 0) {
     const symbols = [...activeQuoteRefCounts.keys()];
-    console.warn(`[DXLink] Replaying ${symbols.length} quote subscription(s) after reconnect: ${symbols.join(", ")}`);
+    logger.warn(`[DXLink] Replaying ${symbols.length} quote subscription(s) after reconnect: ${symbols.join(", ")}`);
     try {
       qs.subscribe(symbols);
     } catch (err: any) {
-      console.warn(`[DXLink] Failed to replay quote subscriptions: ${err?.message ?? err}`);
+      logger.warn(`[DXLink] Failed to replay quote subscriptions: ${err?.message ?? err}`);
     }
   }
 
   for (const { entry: sub } of activeCandleRefCounts.values()) {
-    console.warn(`[DXLink] Replaying candle subscription for ${sub.symbol} after reconnect.`);
+    logger.warn(`[DXLink] Replaying candle subscription for ${sub.symbol} after reconnect.`);
     try {
       qs.subscribeCandles(sub.symbol, sub.fromTime, sub.periodMinutes, sub.candleType);
     } catch (err: any) {
-      console.warn(`[DXLink] Failed to replay candle subscription for ${sub.symbol}: ${err?.message ?? err}`);
+      logger.warn(`[DXLink] Failed to replay candle subscription for ${sub.symbol}: ${err?.message ?? err}`);
     }
   }
+
+  // Notify tool handlers that a reconnect has occurred so they can discard
+  // any pre-reconnect events they may have already buffered.
+  notifyReconnect();
 }
 
 function cancelPendingReconnect(): void {
@@ -232,20 +266,24 @@ function attachFeedListeners(feed: any, myVersion: number, qs: any): void {
   }
 }
 
+const WS_CONNECT_READY_TIMEOUT_MS = 15_000;
+
 function attachQuoteStreamerHandlers(c: TastytradeClient): void {
   const qs = c.quoteStreamer as any;
-  let activeDxLinkWsClient: any = null;
 
   qs.connect = async function patchedConnect() {
     cancelPendingReconnect();
     const myVersion = ++currentConnectVersion;
 
+    // Explicitly close any existing DXLinkWebSocketClient before creating a new
+    // one.  Without this the old socket lingers as an orphaned connection until
+    // it times out on the server side.
     if (activeDxLinkWsClient !== null) {
       try {
-        logger.warn("[QuoteStreamer] Disconnecting previous WebSocket client before reconnect");
+        logger.warn("[QuoteStreamer] Closing previous WebSocket client before reconnect.");
         activeDxLinkWsClient.disconnect();
       } catch (err: any) {
-        logger.warn(`[QuoteStreamer] Error disconnecting old client: ${err?.message ?? err}`);
+        logger.warn(`[QuoteStreamer] Error closing old WebSocket client: ${err?.message ?? err}`);
       }
       activeDxLinkWsClient = null;
     }
@@ -260,8 +298,77 @@ function attachQuoteStreamerHandlers(c: TastytradeClient): void {
     const wsClient = new DXLinkWebSocketClient();
     activeDxLinkWsClient = wsClient;
 
+    // --- Lifecycle logging for wsClient state transitions ---
+    if (typeof wsClient.addConnectionStateChangeListener === "function") {
+      wsClient.addConnectionStateChangeListener((state: string) => {
+        if (myVersion !== currentConnectVersion) return;
+        switch (state) {
+          case "CONNECTING":
+            logger.info("[DXLink] WebSocket connecting...");
+            break;
+          case "CONNECTED":
+            logger.info("[DXLink] WebSocket connected and ready.");
+            break;
+          case "NOT_CONNECTED":
+            logger.warn("[DXLink] WebSocket not connected.");
+            break;
+          default:
+            logger.info(`[DXLink] WebSocket state → ${state}`);
+        }
+      });
+    }
+
+    logger.info(`[DXLink] Initiating WebSocket connection to ${qs.dxLinkUrl}`);
     wsClient.connect(qs.dxLinkUrl);
     wsClient.setAuthToken(qs.dxLinkAuthToken);
+
+    // --- Await readiness before declaring the feed usable ---
+    // subscribe() calls that land before the WS handshake completes are silently
+    // dropped by DXLink, causing get_quote to return empty even when markets are
+    // open.  We wait for the "CONNECTED" state signal (or a generous timeout
+    // fallback) before marking the connection as ready.
+    await new Promise<void>((resolve) => {
+      // Check if already connected (state raced ahead before we registered).
+      if (typeof wsClient.getConnectionState === "function" &&
+          wsClient.getConnectionState() === "CONNECTED") {
+        resolve();
+        return;
+      }
+
+      // If the client has no state-change API, resolve immediately and let the
+      // caller proceed (best-effort degradation).
+      if (typeof wsClient.addConnectionStateChangeListener !== "function") {
+        resolve();
+        return;
+      }
+
+      const fallback = setTimeout(() => {
+        logger.warn("[DXLink] WebSocket readiness timeout — proceeding anyway.");
+        wsClient.removeConnectionStateChangeListener?.(readyListener);
+        resolve();
+      }, WS_CONNECT_READY_TIMEOUT_MS);
+
+      const readyListener = (state: string) => {
+        if (state === "CONNECTED") {
+          clearTimeout(fallback);
+          wsClient.removeConnectionStateChangeListener?.(readyListener);
+          resolve();
+        } else if (state === "NOT_CONNECTED") {
+          // Connection dropped before becoming ready; resolve so the outer
+          // try/catch in scheduleQuoteStreamerReconnect can handle it.
+          clearTimeout(fallback);
+          wsClient.removeConnectionStateChangeListener?.(readyListener);
+          resolve();
+        }
+      };
+      wsClient.addConnectionStateChangeListener(readyListener);
+    });
+
+    // Bail out if this connect attempt was superseded by a newer one.
+    if (myVersion !== currentConnectVersion) {
+      logger.warn("[DXLink] Connect attempt superseded — aborting stale patchedConnect.");
+      return;
+    }
 
     qs.dxLinkFeed = new DXLinkFeed(wsClient, FeedContract.AUTO);
     qs.dxLinkFeed.configure({
@@ -494,6 +601,17 @@ export async function disconnectClient(): Promise<void> {
     (client.quoteStreamer as any).isConnected = false;
     activeQuoteRefCounts.clear();
     activeCandleRefCounts.clear();
+    // Explicitly close the underlying DXLinkWebSocketClient so the socket is
+    // terminated immediately rather than left as an orphaned connection.
+    if (activeDxLinkWsClient !== null) {
+      try {
+        activeDxLinkWsClient.disconnect();
+        logger.info("[DXLink] Underlying WebSocket client closed on disconnect.");
+      } catch (err: any) {
+        logger.warn(`[DXLink] Error closing underlying WebSocket client: ${err?.message ?? err}`);
+      }
+      activeDxLinkWsClient = null;
+    }
     try {
       await client.quoteStreamer.disconnect();
     } catch {}

@@ -7,6 +7,7 @@ import {
   registerCandleSubscription,
   unregisterCandleSubscription,
   getOrCreateInflightQuote,
+  onReconnect,
 } from "../tastytrade-client.js";
 import { formatApiError } from "./error-utils.js";
 import { coerceToArray } from "./schema-utils.js";
@@ -374,6 +375,13 @@ export function registerMarketDataTools(server: McpServer) {
 
         client.quoteStreamer.addEventListener(listener);
 
+        // Clear stale pre-reconnect candles if the WebSocket reconnects during
+        // the collection window.  replaySubscriptions() will re-subscribe and
+        // fresh candles will arrive into the now-empty buffer.
+        const unsubReconnect = onReconnect(() => {
+          collectedEvents.length = 0;
+        });
+
         const wasConnected = (client.quoteStreamer as any).isConnected;
         if (!wasConnected) {
           await client.quoteStreamer.connect();
@@ -389,6 +397,7 @@ export function registerMarketDataTools(server: McpServer) {
           client.quoteStreamer.subscribeCandles(streamerSymbol, fromDate.getTime(), periodMinutes, CandleType.Minute);
           await new Promise(resolve => setTimeout(resolve, timeoutMs));
         } finally {
+          unsubReconnect();
           unregisterCandleSubscription(candleEntry);
           client.quoteStreamer.removeEventListener(listener);
         }
