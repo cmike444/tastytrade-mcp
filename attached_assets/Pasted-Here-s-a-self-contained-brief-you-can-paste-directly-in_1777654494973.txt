@@ -1,0 +1,125 @@
+Here's a self-contained brief you can paste directly into Repl.It:
+
+---
+
+## Bug: TastyTrade MCP Server Loses Auth and Requires Manual Reconnect
+
+### Root Cause
+
+The server holds the TastyTrade `session-token` in memory only. Two failure modes:
+
+1. **Container restart** (Replit will restart the Repl on inactivity) — in-memory token is gone, all tool calls fail immediately
+2. **Session expiry** (TastyTrade sessions expire after ~24h of inactivity) — DXLink streaming drops first, then REST calls fail, then full auth error
+
+The server has no mechanism to persist or automatically renew the session.
+
+---
+
+### Fix: Three Changes Required
+
+#### 1. Persist tokens to disk on every successful auth
+
+After every successful login (initial auth or renewal), write both tokens to a JSON file:
+
+```javascript
+const fs = require('fs');
+const TOKEN_FILE = './tastytrade-session.json';
+
+function saveTokens({ sessionToken, rememberToken }) {
+  fs.writeFileSync(TOKEN_FILE, JSON.stringify({
+    sessionToken,
+    rememberToken,
+    savedAt: Date.now()
+  }, null, 2));
+}
+
+function loadTokens() {
+  try {
+    if (fs.existsSync(TOKEN_FILE)) {
+      return JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8'));
+    }
+  } catch (_) {}
+  return null;
+}
+```
+
+#### 2. On server startup, auto-reconnect before requiring fresh auth
+
+Replace the current startup "require auth" flow with this sequence:
+
+```javascript
+async function initializeSession() {
+  const stored = loadTokens();
+  if (!stored) return requireFreshAuth();
+
+  // 1. Try the existing session token
+  const valid = await validateSession(stored.sessionToken);
+  if (valid) {
+    currentSessionToken = stored.sessionToken;
+    scheduleRenewal(stored.rememberToken);
+    await reconnectDXLink(stored.sessionToken);
+    return;
+  }
+
+  // 2. Session expired — use remember-token to get a new one
+  if (stored.rememberToken) {
+    const renewed = await renewWithRememberToken(stored.rememberToken);
+    if (renewed) {
+      saveTokens(renewed);
+      currentSessionToken = renewed.sessionToken;
+      scheduleRenewal(renewed.rememberToken);
+      await reconnectDXLink(renewed.sessionToken);
+      return;
+    }
+  }
+
+  // 3. Both failed — need user to re-auth
+  requireFreshAuth();
+}
+```
+
+**TastyTrade renewal endpoint** (POST, no password needed):
+```
+POST /sessions
+Body: { "remember-me": true }
+Header: Authorization: {remember-token}
+```
+This returns a fresh `session-token` and a new `remember-token`. Save both.
+
+#### 3. Proactive renewal timer — refresh before expiry
+
+Set this up once after every successful auth:
+
+```javascript
+let renewalTimer = null;
+
+function scheduleRenewal(rememberToken) {
+  if (renewalTimer) clearTimeout(renewalTimer);
+  // Renew at 23h — well before the 24h expiry
+  renewalTimer = setTimeout(async () => {
+    const renewed = await renewWithRememberToken(rememberToken);
+    if (renewed) {
+      saveTokens(renewed);
+      currentSessionToken = renewed.sessionToken;
+      scheduleRenewal(renewed.rememberToken); // chain the next renewal
+      await reconnectDXLink(renewed.sessionToken); // reauth DXLink with new token
+    }
+  }, 23 * 60 * 60 * 1000); // 23 hours
+}
+```
+
+---
+
+### Replit-Specific Notes
+
+- **File persistence**: Files written to the Repl's working directory (`./`) **do persist across restarts** on paid plans. On free/Autoscale, use Replit's built-in key-value store (`@replit/database`) instead of `fs.writeFileSync` if the container is ephemeral.
+- **Don't store credentials in the token file** — only store tokens. The user's TastyTrade username/password should stay in Replit Secrets (environment variables), used only for the initial login when both tokens are missing/invalid.
+- **DXLink reconnection**: When `reconnectDXLink` is called with a new session token, tear down the existing WebSocket and re-establish it using the new token in the DXLink auth handshake. This is what causes the streaming failures that precede the REST API failures.
+
+---
+
+### Expected Behavior After Fix
+
+- Server restart → reads tokens from disk → validates or renews → reconnects DXLink → no user action needed
+- Session approaching 24h → proactive renewal fires at 23h → seamless, user never sees an auth error
+- Only scenario requiring manual re-auth: `remember-token` itself expires (TastyTrade typically sets this to 28–30 days) or user explicitly revokes the session

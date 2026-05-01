@@ -1,0 +1,78 @@
+Yes — real risks, but all mitigatable. Here's the honest breakdown:
+
+---
+
+### The Risks
+
+**1. Plaintext remember-token on disk is essentially a plaintext password**
+The `remember-token` lets anyone who reads it generate fresh session tokens indefinitely. If the file is exposed, an attacker has persistent access to the trading account until you manually revoke sessions in TastyTrade. This is the most serious risk.
+
+**2. Replit-specific exposure vectors**
+- If the Repl is set to **Public**, the file system is browsable — the token file is visible to anyone
+- **Replit forks** copy the entire file system, including the token file
+- If the Repl has **GitHub sync enabled**, the token file could be committed and pushed
+- Replit staff and the platform itself have file system access
+
+**3. Multiple instances**
+Replit Autoscale can spin up multiple containers simultaneously. Two instances sharing the same session token can cause race conditions, and one renewing the token invalidates the other's copy.
+
+---
+
+### The Fix: Encrypt the Token File
+
+Store tokens encrypted at rest. The encryption key lives in Replit Secrets (environment variables) — never on disk.
+
+```javascript
+const crypto = require('crypto');
+
+const ALGORITHM = 'aes-256-gcm';
+const KEY = Buffer.from(process.env.TOKEN_ENCRYPTION_KEY, 'hex'); // 32-byte key in Secrets
+
+function saveTokens({ sessionToken, rememberToken }) {
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv(ALGORITHM, KEY, iv);
+  const payload = JSON.stringify({ sessionToken, rememberToken, savedAt: Date.now() });
+  const encrypted = Buffer.concat([cipher.update(payload, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  
+  fs.writeFileSync('./tastytrade-session.enc', JSON.stringify({
+    iv: iv.toString('hex'),
+    authTag: authTag.toString('hex'),
+    data: encrypted.toString('hex')
+  }));
+}
+
+function loadTokens() {
+  try {
+    const { iv, authTag, data } = JSON.parse(fs.readFileSync('./tastytrade-session.enc', 'utf8'));
+    const decipher = crypto.createDecipheriv(ALGORITHM, KEY, Buffer.from(iv, 'hex'));
+    decipher.setAuthTag(Buffer.from(authTag, 'hex'));
+    const decrypted = Buffer.concat([decipher.update(Buffer.from(data, 'hex')), decipher.final()]);
+    return JSON.parse(decrypted.toString('utf8'));
+  } catch (_) { return null; }
+}
+```
+
+Generate the key once and store it in Replit Secrets:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# Paste output into Replit Secrets as TOKEN_ENCRYPTION_KEY
+```
+
+---
+
+### Additional Hardening Checklist
+
+| Action | Why |
+|--------|-----|
+| Set Repl to **Private** | Prevents public file system browsing |
+| Add `*.enc` and `*session*.json` to `.gitignore` | Prevents accidental commits |
+| Store only the minimum — prefer session-token over remember-token if 24h lifetime is acceptable | Limits damage window if exposed |
+| On each renewal, **immediately overwrite** the old token file | Old tokens on disk = extra exposure |
+| Consider calling TastyTrade's session validation endpoint on startup and logging failed attempts | Early warning if someone else is using your token |
+
+---
+
+### Bottom Line
+
+Plaintext file = unacceptable for a trading account. Encrypted file with key in Replit Secrets = reasonable risk for a private Repl you control. The encryption means even if someone reads the file, they get ciphertext — useless without the key in Secrets.
