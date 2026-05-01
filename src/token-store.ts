@@ -30,6 +30,11 @@ const DEFAULT_TOKEN_PATH = "./tastytrade-session.enc";
 
 let _keyWarningLogged = false;
 
+/** Resets the one-shot warning flag. Only intended for use in unit tests. */
+export function _resetKeyWarningForTesting(): void {
+  _keyWarningLogged = false;
+}
+
 // ---------------------------------------------------------------------------
 // Encryption key validation
 // ---------------------------------------------------------------------------

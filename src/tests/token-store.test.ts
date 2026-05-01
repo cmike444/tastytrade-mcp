@@ -21,7 +21,9 @@ import {
   saveTokens,
   loadTokens,
   getTokenAgeDays,
+  _resetKeyWarningForTesting,
 } from "../token-store.js";
+import { logger } from "../logger.js";
 
 // Use a temp file path so tests never touch the real .enc file
 const TEST_PATH = "/tmp/tt-test-session.enc";
@@ -143,7 +145,45 @@ test("token-store — getTokenAgeDays returns a number >= 0 after a save", () =>
 });
 
 // ---------------------------------------------------------------------------
-// (g) validateEncryptionKey — invalid length returns false
+// (g) validateEncryptionKey — WARN log contains a valid 64-char lowercase hex key
+// ---------------------------------------------------------------------------
+
+test("token-store — validateEncryptionKey WARN log contains a 64-char lowercase hex key when key is absent", () => {
+  const originalKey = process.env["TOKEN_ENCRYPTION_KEY"];
+  delete process.env["TOKEN_ENCRYPTION_KEY"];
+
+  // Reset the one-shot guard so the warning fires fresh for this test.
+  _resetKeyWarningForTesting();
+
+  // Spy on logger.warn to capture the emitted message.
+  const captured: string[] = [];
+  const originalWarn = logger.warn;
+  logger.warn = (msg: string) => { captured.push(msg); };
+
+  try {
+    const result = validateEncryptionKey();
+    assert.equal(result, false, "validateEncryptionKey returns false when key is absent");
+    assert.equal(captured.length, 1, "exactly one WARN log emitted");
+
+    const msg = captured[0]!;
+    const match = msg.match(/\b([0-9a-f]{64})\b/);
+    assert.ok(match !== null, "WARN log contains a 64-char lowercase hex string");
+    assert.equal(match![1]!.length, 64, "extracted hex key is exactly 64 characters");
+    assert.ok(/^[0-9a-f]{64}$/.test(match![1]!), "extracted key is lowercase hex only");
+  } finally {
+    logger.warn = originalWarn;
+    if (originalKey !== undefined) {
+      process.env["TOKEN_ENCRYPTION_KEY"] = originalKey;
+    } else {
+      delete process.env["TOKEN_ENCRYPTION_KEY"];
+    }
+    // Restore flag state so subsequent tests are not affected.
+    _resetKeyWarningForTesting();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// (h) validateEncryptionKey — invalid length returns false
 // ---------------------------------------------------------------------------
 
 test("token-store — validateEncryptionKey returns false for wrong-length key", () => {
