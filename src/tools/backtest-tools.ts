@@ -233,14 +233,15 @@ export function registerBacktestTools(server: McpServer) {
 
   server.tool(
     "simulate_trade",
-    "One-shot historical price lookup for an option structure on specific dates. Provide OCC-format option symbols and an optional time window to get historical prices, effects, and greeks.",
+    "One-shot historical price lookup for an option structure on specific dates. Provide OCC-format option symbols with direction and an optional time window to get historical prices, effects, and greeks. Each leg requires a symbol and direction. Example leg: { symbol: 'SPY   250117C00500000', direction: 'long' }.",
     {
       underlying: z.string().describe("Underlying symbol (e.g. 'SPY')"),
       startTime: z.string().optional().describe("Start time in ISO 8601 format (e.g. '2024-01-15T09:30:00Z')"),
       endTime: z.string().optional().describe("End time in ISO 8601 format (e.g. '2024-01-15T16:00:00Z')"),
       legs: z.array(z.object({
         symbol: z.string().describe("OCC-format option symbol (e.g. 'SPY   250117C00500000')"),
-      })).describe("Option legs to simulate"),
+        direction: z.enum(["long", "short"]).describe("Trade direction: 'long' to buy, 'short' to sell"),
+      })).describe("Option legs to simulate. Each leg must have a symbol and direction."),
     },
     READ_ONLY,
     async ({ underlying, startTime, endTime, legs }) => {
