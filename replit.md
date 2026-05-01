@@ -18,6 +18,7 @@ A Model Context Protocol (MCP) server that integrates with TastyTrade brokerage 
 src/
   index.ts                    - Main entry point, dual transport (stdio + HTTP), OAuth + bearer auth
   tastytrade-client.ts        - TastyTrade client wrapper with OAuth authentication
+  token-store.ts              - AES-256-GCM encrypted refresh token persistence (save/load/age)
   oauth-provider.ts           - Built-in OAuth 2.1 authorization server (DCR, PKCE, token management)
   auth-page.ts                - HTML authorization page rendered during OAuth flow
   tools/
@@ -56,6 +57,7 @@ src/
 - **TASTYTRADE_CLIENT_SECRET**: TastyTrade OAuth client secret (stored as Replit secret, auto-loaded on startup)
 - **TASTYTRADE_REFRESH_TOKEN**: TastyTrade OAuth refresh token (stored as Replit secret, auto-loaded on startup)
 - **TASTYTRADE_SANDBOX**: Set to `true` to use TastyTrade sandbox environment (optional)
+- **TOKEN_ENCRYPTION_KEY**: 64-char hex string (32 bytes) used for AES-256-GCM encryption of the persisted refresh token file (`tastytrade-session.enc`). If absent or malformed, token persistence is silently disabled and auth falls back to env vars as before. Optional.
 - **PORT**: HTTP server port (defaults to 5000)
 
 ### Available MCP Tools (72)
@@ -112,6 +114,7 @@ The server automatically authenticates with TastyTrade on startup using stored s
 - **Port**: 5000
 
 ## Recent Changes
+- 2026-05-01: Task #137 — Encrypted token persistence: new src/token-store.ts implements AES-256-GCM save/load/age APIs. autoAuthenticate tries persisted refresh token first (< 28 days old), falls back to TASTYTRADE_REFRESH_TOKEN env var, and saves the token that succeeded. Keepalive re-auth path also calls saveTokens. check_auth_status now returns persistedTokenAgeDays (days as float, or null). TOKEN_ENCRYPTION_KEY env var controls persistence (64-char hex, optional — disabled gracefully if absent/malformed). tastytrade-session.enc written atomically via .tmp rename. *.enc and *session*.json added to .gitignore. 9 unit tests (npm run test:token-store) + smoke test (npm run test:smoke:auth-persistence) added.
 - 2026-05-01: Task #29 — WebSocket hardening: patchedConnect() now awaits DXLink CONNECTED state (using addConnectionStateChangeListener) before resolving, preventing silent subscribe() drops. activeDxLinkWsClient promoted to module scope and explicitly closed in disconnectClient() to prevent orphaned sockets. Lifecycle state logging added. Stale-data guard via onReconnect() pub-sub clears event buffers in get_quote, get_options_greeks, and get_candles if a reconnect occurs mid-collection.
 - 2026-05-01: Task #28 — Server observability: src/metrics.ts now persists call counts/latencies to .metrics.json every 60s and restores them on startup so metrics survive restarts.
 - 2026-05-01: Task #36 — Futures candle completeness: get_candles now detects futures option symbols (./ prefix) and resolves their streamer symbol via getSingleFutureOption in addition to outright futures (/ prefix via getFutures). Symbol parameter description updated with examples.

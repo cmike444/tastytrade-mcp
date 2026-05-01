@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { isClientAuthenticated, disconnectClient, autoAuthenticate } from "../tastytrade-client.js";
 import { formatApiError } from "./error-utils.js";
+import { getTokenAgeDays } from "../token-store.js";
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 
@@ -11,14 +12,40 @@ export function registerAuthTools(server: McpServer) {
     {},
     READ_ONLY,
     async () => {
+      const persistedTokenAgeDays = getTokenAgeDays();
       if (isClientAuthenticated()) {
-        return { content: [{ type: "text" as const, text: "Status: Authenticated and connected to TastyTrade." }] };
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              status: "Authenticated and connected to TastyTrade.",
+              persistedTokenAgeDays,
+            }),
+          }],
+        };
       }
       try {
         const result = await autoAuthenticate();
-        return { content: [{ type: "text" as const, text: `Status: Reconnected. ${result}` }] };
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              status: `Reconnected. ${result}`,
+              persistedTokenAgeDays: getTokenAgeDays(),
+            }),
+          }],
+        };
       } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Status: Not authenticated. ${formatApiError(error)}` }], isError: true };
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              status: `Not authenticated. ${formatApiError(error)}`,
+              persistedTokenAgeDays,
+            }),
+          }],
+          isError: true,
+        };
       }
     }
   );

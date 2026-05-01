@@ -3,6 +3,12 @@ import WebSocket from "ws";
 import { createRequire } from "module";
 import { logger } from "./logger.js";
 import { execute as cbExecute, getCircuitBreakerStatus } from "./circuit-breaker.js";
+import {
+  validateEncryptionKey,
+  saveTokens,
+  loadTokens,
+  MAX_TOKEN_AGE_DAYS,
+} from "./token-store.js";
 
 (global as any).WebSocket = WebSocket;
 (global as any).window = { WebSocket, setTimeout, clearTimeout };
@@ -14,8 +20,17 @@ const RECONNECT_MAX_MS = 60000;
 
 const _require = createRequire(import.meta.url);
 
+// Validate encryption key once at module initialisation.
+// All saveTokens calls check this flag before writing.
+const isKeyValid: boolean = validateEncryptionKey();
+
 let client: TastytradeClient | null = null;
 let isAuthenticated = false;
+
+// Tracks the refresh token that was most recently used to successfully
+// authenticate. Persisted to disk after each successful auth so that the
+// latest (potentially rotated) token survives restarts.
+let lastSuccessfulRefreshToken: string | null = null;
 
 // Session token obtained via POST /sessions (username + password).
 // Required by TastyTrade internal services (e.g. backtesting API) that do not
@@ -554,6 +569,65 @@ export async function authenticateOAuth(config: TastyTradeOAuthConfig): Promise<
       oauthScopes: config.oauthScopes,
     } as any);
 
+    // Patch httpClient.generateAccessToken to capture any rotated refresh_token
+    // returned by the TastyTrade OAuth server in the token response body.
+    // The SDK's own implementation ignores this field; our patch reads it and
+    // updates httpClient.refreshToken so extractEffectiveRefreshToken() can
+    // detect and persist the new token after each successful exchange.
+    //
+    // Guarded by a capability check: if SDK internals have changed and the
+    // required methods are missing, the patch is skipped and the SDK's default
+    // generateAccessToken is left in place (no rotation capture, but auth works).
+    {
+      const hc = (client as any).httpClient;
+      const canPatch =
+        typeof hc?.axiosConfig === "function" &&
+        typeof hc?.getDefaultHeaders === "function" &&
+        typeof hc?.accessToken?.updateFromTokenResponse === "function";
+
+      if (!canPatch) {
+        logger.warn(
+          "[TastyTrade] generateAccessToken patch skipped — SDK internals changed. " +
+          "Rotated refresh tokens will not be captured, but auth will continue normally."
+        );
+      } else {
+        const axiosLib = _require("axios");
+        const axiosFn: typeof import("axios").default = axiosLib.default ?? axiosLib;
+
+        hc.generateAccessToken = async (): Promise<any> => {
+          if (hc.refreshToken == null || hc.clientSecret == null || hc.oauthScopes == null) {
+            throw new Error(
+              "Missing required parameters to generate access token (refreshToken, clientSecret, oauthScopes)"
+            );
+          }
+          const params = {
+            refresh_token: hc.refreshToken,
+            client_secret: hc.clientSecret,
+            scope: (hc.oauthScopes as string[]).join(" "),
+            grant_type: "refresh_token",
+          };
+          const axiosConfig = hc.axiosConfig("post", "/oauth/token", params, hc.getDefaultHeaders());
+          const tokenResponse = await axiosFn.request(axiosConfig);
+          hc.accessToken.updateFromTokenResponse(tokenResponse);
+
+          // Capture a rotated refresh_token if TastyTrade includes one in the response.
+          const newRefToken: unknown = tokenResponse?.data?.refresh_token;
+          if (
+            typeof newRefToken === "string" &&
+            newRefToken.length > 0 &&
+            newRefToken !== hc.refreshToken
+          ) {
+            logger.info(
+              "[TastyTrade] OAuth token exchange: server issued a rotated refresh_token — capturing for persistence."
+            );
+            hc.refreshToken = newRefToken;
+          }
+
+          return hc.accessToken;
+        };
+      }
+    }
+
     // Extend orderService with postComplexOrderDryRun so tools can preflight
     // multi-leg orders via POST /accounts/{id}/complex-orders/dry-run.
     // This endpoint is absent from the library but the service exposes httpClient.
@@ -600,25 +674,100 @@ export async function authenticateOAuth(config: TastyTradeOAuthConfig): Promise<
   }
 }
 
+/**
+ * After a successful OAuth exchange, try to extract the current refresh token
+ * from the SDK client's internal HTTP client. The SDK stores the token it was
+ * initialised with; if TastyTrade ever returns a rotated refresh_token in the
+ * token response and the SDK captures it, this call will return the updated value.
+ * Falls back to `inputToken` if the SDK does not expose a different value.
+ */
+function extractEffectiveRefreshToken(inputToken: string): string {
+  try {
+    const sdkToken = (client as any)?.httpClient?.refreshToken;
+    if (typeof sdkToken === "string" && sdkToken.length > 0 && sdkToken !== inputToken) {
+      logger.info("[TastyTrade] extractEffectiveRefreshToken: SDK returned a rotated refresh token.");
+      return sdkToken;
+    }
+  } catch {
+    // ignore — SDK internals may change
+  }
+  return inputToken;
+}
+
 export async function autoAuthenticate(): Promise<string> {
   const clientSecret = process.env.TASTYTRADE_CLIENT_SECRET;
-  const refreshToken = process.env.TASTYTRADE_REFRESH_TOKEN;
+  const envRefreshToken = process.env.TASTYTRADE_REFRESH_TOKEN;
   const sandbox = process.env.TASTYTRADE_SANDBOX === "true";
 
-  if (clientSecret && refreshToken) {
-    return cbExecute(() =>
-      authenticateOAuth({
-        clientSecret,
-        refreshToken,
-        oauthScopes: ["read", "trade"],
-        sandbox,
-      })
+  if (!clientSecret) {
+    throw new Error(
+      "No TastyTrade credentials found. Set TASTYTRADE_CLIENT_SECRET and TASTYTRADE_REFRESH_TOKEN as secrets."
     );
   }
 
-  throw new Error(
-    "No TastyTrade credentials found. Set TASTYTRADE_CLIENT_SECRET and TASTYTRADE_REFRESH_TOKEN as secrets."
+  // --- Try persisted (encrypted) token first ---
+  if (isKeyValid) {
+    const stored = loadTokens();
+    if (stored) {
+      const ageMs = Date.now() - stored.savedAt.getTime();
+      const ageDays = ageMs / (1000 * 60 * 60 * 24);
+      if (ageDays < MAX_TOKEN_AGE_DAYS) {
+        try {
+          logger.info("[TastyTrade] autoAuthenticate: trying persisted refresh token...");
+          const result = await cbExecute(() =>
+            authenticateOAuth({
+              clientSecret,
+              refreshToken: stored.refreshToken,
+              oauthScopes: ["read", "trade"],
+              sandbox,
+            })
+          );
+          // Read back the effective token from the SDK (captures rotation if any),
+          // update the module-level tracker, and re-persist so mtime stays current.
+          const effective = extractEffectiveRefreshToken(stored.refreshToken);
+          lastSuccessfulRefreshToken = effective;
+          saveTokens({ refreshToken: effective });
+          logger.info("[TastyTrade] autoAuthenticate: persisted token succeeded.");
+          return result;
+        } catch (err: any) {
+          logger.warn(
+            `[TastyTrade] autoAuthenticate: persisted token failed (${err?.message ?? err}), ` +
+            "falling back to env var token..."
+          );
+        }
+      } else {
+        logger.info(
+          `[TastyTrade] autoAuthenticate: persisted token is ${ageDays.toFixed(1)} days old (max ${MAX_TOKEN_AGE_DAYS}), skipping.`
+        );
+      }
+    }
+  }
+
+  // --- Fall back to env var token ---
+  if (!envRefreshToken) {
+    throw new Error(
+      "No TastyTrade credentials found. Set TASTYTRADE_CLIENT_SECRET and TASTYTRADE_REFRESH_TOKEN as secrets."
+    );
+  }
+
+  const result = await cbExecute(() =>
+    authenticateOAuth({
+      clientSecret,
+      refreshToken: envRefreshToken,
+      oauthScopes: ["read", "trade"],
+      sandbox,
+    })
   );
+
+  // Read back the effective token from the SDK (captures rotation if any),
+  // update the module-level tracker, and persist for future restarts.
+  const effective = extractEffectiveRefreshToken(envRefreshToken);
+  lastSuccessfulRefreshToken = effective;
+  if (isKeyValid) {
+    saveTokens({ refreshToken: effective });
+  }
+
+  return result;
 }
 
 export async function disconnectClient(): Promise<void> {
@@ -730,6 +879,12 @@ export function startKeepalive(): () => void {
         const result = await autoAuthenticate();
         reauthed = true;
         logger.info(`[TastyTrade] Keepalive: re-authentication succeeded — ${result}`);
+        // autoAuthenticate() already persists the effective token internally.
+        // Belt-and-suspenders: also save here using the module-level tracker
+        // so keepalive re-auth is unambiguously durably recorded.
+        if (isKeyValid && lastSuccessfulRefreshToken) {
+          saveTokens({ refreshToken: lastSuccessfulRefreshToken });
+        }
       } catch (err: any) {
         logger.error(`[TastyTrade] Keepalive: re-authentication failed — ${err?.message ?? err}`);
       }
