@@ -76,6 +76,14 @@ export interface CandleSubscriptionEntry {
   candleType: string;
 }
 
+interface DxLinkFeed {
+  removeSubscriptions(sub: { type: string; symbol: string }): void;
+}
+
+interface QuoteStreamerInternal {
+  dxLinkFeed: DxLinkFeed | null;
+}
+
 const activeQuoteRefCounts: Map<string, number> = new Map();
 const activeCandleRefCounts: Map<string, { count: number; entry: CandleSubscriptionEntry }> = new Map();
 
@@ -144,14 +152,25 @@ export function registerQuoteSubscriptions(symbols: string[]): void {
 }
 
 export function unregisterQuoteSubscriptions(symbols: string[]): void {
+  const toUnsubscribe: string[] = [];
   for (const s of symbols) {
     const count = activeQuoteRefCounts.get(s);
     if (count !== undefined) {
       if (count <= 1) {
         activeQuoteRefCounts.delete(s);
+        toUnsubscribe.push(s);
       } else {
         activeQuoteRefCounts.set(s, count - 1);
       }
+    }
+  }
+  if (toUnsubscribe.length > 0) {
+    try {
+      const qs = getClient().quoteStreamer;
+      qs.unsubscribe(toUnsubscribe);
+      logger.info(`[DXLink] Unsubscribed from quote symbols: ${toUnsubscribe.join(", ")}`);
+    } catch (err: any) {
+      logger.warn(`[DXLink] Failed to send unsubscribe for quote symbols [${toUnsubscribe.join(", ")}]: ${err?.message ?? err}`);
     }
   }
 }
@@ -172,6 +191,19 @@ export function unregisterCandleSubscription(entry: CandleSubscriptionEntry): vo
   if (existing) {
     if (existing.count <= 1) {
       activeCandleRefCounts.delete(key);
+      try {
+        const qs = getClient().quoteStreamer as unknown as QuoteStreamerInternal;
+        const feed = qs.dxLinkFeed;
+        if (!feed) {
+          logger.warn(`[DXLink] Cannot unsubscribe candle [${entry.symbol}]: dxLinkFeed is not connected`);
+        } else {
+          const candleSymbol = `${entry.symbol}{=${entry.periodMinutes}${entry.candleType}}`;
+          feed.removeSubscriptions({ type: "Candle", symbol: candleSymbol });
+          logger.info(`[DXLink] Unsubscribed from candle symbol: ${candleSymbol}`);
+        }
+      } catch (err: any) {
+        logger.warn(`[DXLink] Failed to send unsubscribe for candle [${entry.symbol}]: ${err?.message ?? err}`);
+      }
     } else {
       activeCandleRefCounts.set(key, { count: existing.count - 1, entry: existing.entry });
     }

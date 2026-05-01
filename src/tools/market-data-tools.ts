@@ -539,18 +539,4 @@ export function registerMarketDataTools(server: McpServer) {
     }
   );
 
-  server.tool(
-    "get_api_quote_token",
-    "Get the quote streamer authentication token and endpoint for DXLink market data access.",
-    {},
-    READ_ONLY,
-    async () => {
-      try {
-        const token = await getClient().accountsAndCustomersService.getApiQuoteToken();
-        return { content: [{ type: "text" as const, text: JSON.stringify(token) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
-      }
-    }
-  );
 }
