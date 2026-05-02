@@ -97,8 +97,22 @@ export function renderAuthorizationPage(params: {
     </form>
   </div>
   <script>
+    function isSafeRedirectUrl(urlStr) {
+      try {
+        var parsed = new URL(urlStr);
+        var scheme = parsed.protocol.toLowerCase();
+        if (scheme === 'javascript:' || scheme === 'data:' || scheme === 'vbscript:') return false;
+        if (scheme === 'http:') {
+          var host = parsed.hostname.toLowerCase();
+          if (host !== 'localhost' && host !== '127.0.0.1' && host !== '::1') return false;
+        }
+        return true;
+      } catch (e) { return false; }
+    }
+
     function denyAccess() {
       const redirectUri = document.querySelector('input[name="redirect_uri"]').value;
+      if (!isSafeRedirectUrl(redirectUri)) return;
       const state = document.querySelector('input[name="state"]').value;
       const url = new URL(redirectUri);
       url.searchParams.set('error', 'access_denied');
@@ -140,12 +154,21 @@ export function renderAuthorizationPage(params: {
         }
 
         var redirectUrl = data.redirect_url;
+        if (!isSafeRedirectUrl(redirectUrl)) {
+          approveBtn.disabled = false;
+          approveBtn.textContent = 'Authorize';
+          denyBtn.disabled = false;
+          errorMsg.textContent = 'Invalid redirect URL returned by server';
+          errorMsg.style.display = 'block';
+          return;
+        }
         var isCustomScheme = !/^https?:/i.test(redirectUrl);
 
         var card = document.querySelector('.card');
+        var safeHref = redirectUrl.replace(/"/g, '%22');
         card.innerHTML = '<h1 style="color:#4ade80;margin-bottom:1rem;">Authorization successful</h1>' +
           '<p style="color:#94a3b8;margin-bottom:1.5rem;">You may close this tab and return to Claude Desktop.</p>' +
-          '<a id="return-link" href="' + redirectUrl.replace(/"/g, '%22') + '" style="color:#3b82f6;font-size:0.9rem;">' +
+          '<a id="return-link" href="' + safeHref + '" style="color:#3b82f6;font-size:0.9rem;">' +
           (isCustomScheme ? 'Click here to return to Claude Desktop' : 'Click here if you are not redirected') +
           '</a>';
 

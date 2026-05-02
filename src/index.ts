@@ -25,6 +25,7 @@ import {
   getServerMetadata,
   getProtectedResourceMetadata,
   registerClient,
+  checkRegistrationRateLimit,
   getClient,
   isClientRedirectValid,
   createAuthorizationCode,
@@ -208,7 +209,13 @@ async function startHttpServer() {
   });
 
   app.post("/oauth/register", (req, res) => {
-    logger.info(`[OAuth] POST /oauth/register body:`, JSON.stringify(req.body));
+    const clientIp = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0].trim() || req.socket.remoteAddress || "unknown";
+    if (!checkRegistrationRateLimit(clientIp)) {
+      logger.warn(`[OAuth] Registration rate limit exceeded for IP: ${clientIp}`);
+      res.status(429).json({ error: "too_many_requests", error_description: "Registration rate limit exceeded. Please try again later." });
+      return;
+    }
+    logger.info(`[OAuth] POST /oauth/register from IP: ${clientIp}`);
     const result = registerClient(req.body);
     if ("error" in result) {
       logger.warn(`[OAuth] Registration failed:`, result.error);
@@ -311,7 +318,7 @@ async function startHttpServer() {
   });
 
   app.post("/oauth/token", (req, res) => {
-    logger.info(`[OAuth] POST /oauth/token body:`, JSON.stringify(req.body));
+    logger.info(`[OAuth] POST /oauth/token grant_type=${req.body?.grant_type} client_id=${req.body?.client_id}`);
     const { grant_type, code, client_id, code_verifier, redirect_uri, client_secret } = req.body as Record<
       string,
       string

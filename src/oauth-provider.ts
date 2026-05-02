@@ -28,6 +28,26 @@ interface AccessToken {
   expires_at: number;
 }
 
+const MAX_REGISTERED_CLIENTS = 100;
+const BLOCKED_URI_SCHEMES = new Set(["javascript", "data", "vbscript", "file"]);
+
+const REGISTRATION_RATE_LIMIT = 5;
+const REGISTRATION_RATE_WINDOW_MS = 60 * 60 * 1000;
+
+const registrationTimestamps = new Map<string, number[]>();
+
+export function checkRegistrationRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const windowStart = now - REGISTRATION_RATE_WINDOW_MS;
+  const timestamps = (registrationTimestamps.get(ip) || []).filter((t) => t > windowStart);
+  if (timestamps.length >= REGISTRATION_RATE_LIMIT) {
+    return false;
+  }
+  timestamps.push(now);
+  registrationTimestamps.set(ip, timestamps);
+  return true;
+}
+
 const clients = new Map<string, OAuthClient>();
 const authorizationCodes = new Map<string, AuthorizationCode>();
 const accessTokens = new Map<string, AccessToken>();
@@ -56,13 +76,27 @@ export function getProtectedResourceMetadata(mcpUrl: string, authServerUrl: stri
 }
 
 export function registerClient(body: Record<string, unknown>): OAuthClient | { error: string } {
+  if (clients.size >= MAX_REGISTERED_CLIENTS) {
+    return { error: "Client registration limit reached" };
+  }
+
   const redirect_uris = body.redirect_uris as string[] | undefined;
   if (!redirect_uris || !Array.isArray(redirect_uris) || redirect_uris.length === 0) {
     return { error: "redirect_uris is required and must contain at least one URI" };
   }
   for (const uri of redirect_uris) {
     try {
-      new URL(uri);
+      const parsed = new URL(uri);
+      const scheme = parsed.protocol.replace(/:$/, "").toLowerCase();
+      if (BLOCKED_URI_SCHEMES.has(scheme)) {
+        return { error: `Redirect URI scheme '${scheme}:' is not allowed` };
+      }
+      if (parsed.protocol === "http:") {
+        const hostname = parsed.hostname.toLowerCase();
+        if (hostname !== "localhost" && hostname !== "127.0.0.1" && hostname !== "::1") {
+          return { error: `HTTP redirect URIs are only allowed for localhost` };
+        }
+      }
     } catch {
       return { error: `Invalid redirect URI: ${uri}` };
     }
