@@ -24,17 +24,50 @@ interface FuturesContract {
 }
 
 /**
- * Resolve a futures root symbol (e.g. /CL) to its active front-month
- * streamer symbol (e.g. /CLM26:XNYM) using the TastyTrade instruments API.
+ * Resolve a futures symbol to its DXLink streamer symbol.
  *
- * `getSingleFuture` expects a fully-qualified contract symbol (e.g. /CLM5),
- * not a root symbol, so it returns 404 for roots.  Instead we call
- * `getFutures` filtered by product-code and select the active-month contract.
+ * Two cases are handled:
+ *
+ * 1. **Fully-qualified contract** (e.g. `/CLM6`, `/ESZ26`) — detected by the
+ *    pattern `^\/[A-Z]+[A-Z]\d{1,2}$` (alphabetic product code, month letter,
+ *    1–2 year digits).  We call `getSingleFuture(symbol)` directly, which is
+ *    the correct API for specific contracts and avoids any product-code
+ *    ambiguity.
+ *
+ * 2. **Root symbol** (e.g. `/CL`, `/ES`) — detected as letters-only after the
+ *    slash.  We extract the alphabetic product code (e.g. `CL`) and call
+ *    `getFutures({ "product-code": ... })` to get all contracts, then select
+ *    the active front-month.
  *
  * Returns the streamer symbol string, or throws on failure.
  */
 async function resolveFuturesStreamerSymbol(client: ReturnType<typeof getClient>, rootSymbol: string): Promise<string> {
-  const productCode = rootSymbol.replace(/^\//, "");
+  // Detect fully-qualified contract: /CLM6, /ESZ26, /GCM26 etc.
+  // Pattern: slash + one-or-more uppercase letters + uppercase month letter + 1-2 digits
+  const isFullyQualified = /^\/[A-Z]+[A-Z]\d{1,2}$/.test(rootSymbol);
+
+  if (isFullyQualified) {
+    let raw: unknown;
+    try {
+      raw = await client.instrumentsService.getSingleFuture(rootSymbol);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Could not fetch futures contract for ${rootSymbol}: ${msg}`);
+    }
+    const item: Record<string, unknown> = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+    const resolved = (item["streamer-symbol"] ?? item["streamerSymbol"]) as string | undefined;
+    if (!resolved) {
+      throw new Error(`No streamer-symbol field found for futures contract ${rootSymbol}: ${JSON.stringify(raw).slice(0, 200)}`);
+    }
+    return resolved;
+  }
+
+  // Root symbol path: strip leading slash, extract only the alphabetic product code
+  // (e.g. "CL" from "/CL", guards against any edge cases where letters+digits slip through)
+  const afterSlash = rootSymbol.replace(/^\//, "");
+  const productCodeMatch = afterSlash.match(/^([A-Z]+)/);
+  const productCode = productCodeMatch ? productCodeMatch[1] : afterSlash;
+
   let raw: unknown;
   try {
     raw = await client.instrumentsService.getFutures({ "product-code": productCode });
