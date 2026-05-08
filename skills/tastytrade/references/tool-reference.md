@@ -73,13 +73,16 @@ Maximum position size limits for the account.
 Submit a single-leg order. See `order-execution.md` for JSON templates.
 - Always run `order_dry_run` first
 
-### `create_complex_order(accountNumber, orderJson)`
+### `create_complex_order(accountNumber, type, orders, trigger-order?, source?)`
 Submit multi-leg orders: spreads, straddles, condors, OCO, OTOCO.
+- `type`: `"BLAST_ALL"` (simultaneous multi-leg), `"OCO"` (first fill cancels other), or `"OTOCO"` (entry + bracket — also supply `trigger-order`)
+- `orders`: array of order objects — each with `time-in-force`, `order-type`, `price`, `price-effect`, `legs[]`
 - Use for any order with 2+ legs or conditional triggers
 - **Always run `complex_order_dry_run` first to validate**
 
-### `complex_order_dry_run(accountNumber, orderJson)`
+### `complex_order_dry_run(accountNumber, type, orders, trigger-order?, source?)`
 **Validate a multi-leg complex order without placing it.** Use this before `create_complex_order`.
+- `type`: `"BLAST_ALL"`, `"OCO"`, or `"OTOCO"`
 - Accepts `Net Debit`, `Net Credit`, `Limit`, and `Market` order types
 - Returns: `buying-power-effect`, `fee-calculation`, warnings, errors, or margin calls
 - **MANDATORY before every `create_complex_order` call**

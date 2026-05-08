@@ -45,13 +45,13 @@ const ComplexOrderLegSchema = z.object({
   "ratio-quantity": z.number().optional().describe("Ratio quantity for this leg"),
 });
 
-const ComplexOrderSchema = z.object({
+const SingleComplexOrderSchema = z.object({
   "time-in-force": z.string().describe("Time in force (e.g. 'Day', 'GTC')"),
   "order-type": z.string().describe("Order type (e.g. 'Limit', 'Market', 'Net Credit', 'Net Debit')"),
-  price: z.number().optional().describe("Net price for the complex order"),
+  price: z.number().optional().describe("Net price for this order"),
   "price-effect": z.string().optional().describe("Price effect: 'Debit' or 'Credit'"),
-  legs: z.preprocess(coerceToArray, z.array(ComplexOrderLegSchema)).describe("Array of order legs for the complex order"),
-  "source": z.string().optional().describe("Optional source identifier"),
+  "stop-trigger": z.number().optional().describe("Stop trigger price (for Stop or Stop Limit order-type)"),
+  legs: z.preprocess(coerceToArray, z.array(ComplexOrderLegSchema)).describe("Array of order legs"),
 });
 
 export function registerOrderTools(server: McpServer) {
@@ -265,23 +265,42 @@ export function registerOrderTools(server: McpServer) {
     [
       "Validate a complex (multi-leg) order without placing it.",
       "Supports Net Debit, Net Credit, Limit, and Market order types.",
-      "Use this before create_complex_order for spreads, straddles, strangles, condors, calendars, and any order with 2+ legs.",
+      "Use this before create_complex_order for spreads, straddles, strangles, condors, calendars, OCO, OTOCO, and any order with 2+ legs.",
       "Returns preflight information including fees, buying power effect, and warnings.",
-    ].join(" "),
+      "",
+      "The body requires a top-level `type` and an `orders` array:",
+      "  type='BLAST_ALL' — execute all legs simultaneously (use for spreads, straddles, condors, calendars)",
+      "  type='OCO'       — two closing orders; first fill cancels the other (profit target + stop)",
+      "  type='OTOCO'     — entry order triggers a bracket; add `trigger-order` field alongside `orders`",
+      "",
+      "Example (vertical spread):",
+      '  { "type": "BLAST_ALL", "orders": [{ "time-in-force": "Day", "order-type": "Limit", "price": 1.50, "price-effect": "Credit", "legs": [...] }] }',
+    ].join("\n"),
     {
       accountNumber: z.string().describe("The account number"),
-      "time-in-force": ComplexOrderSchema.shape["time-in-force"],
-      "order-type": ComplexOrderSchema.shape["order-type"],
-      price: ComplexOrderSchema.shape.price,
-      "price-effect": ComplexOrderSchema.shape["price-effect"],
-      legs: ComplexOrderSchema.shape.legs,
-      source: ComplexOrderSchema.shape["source"],
+      type: z.enum(["BLAST_ALL", "OCO", "OTOCO"]).describe(
+        "Complex order type: 'BLAST_ALL' (multi-leg spread/straddle/condor/calendar executed simultaneously), " +
+        "'OCO' (two orders, first fill cancels the other), or 'OTOCO' (entry order triggers a bracket — also supply trigger-order)."
+      ),
+      orders: z.preprocess(coerceToArray, z.array(SingleComplexOrderSchema)).describe(
+        "Array of individual orders. For BLAST_ALL use one element with all legs. " +
+        "For OCO/OTOCO use two elements (profit target + stop loss)."
+      ),
+      "trigger-order": SingleComplexOrderSchema.optional().describe(
+        "Entry order for OTOCO type. Omit for BLAST_ALL and OCO."
+      ),
+      source: z.string().optional().describe("Optional source identifier"),
     },
     READ_ONLY,
-    async ({ accountNumber, ...orderFields }) => {
+    async ({ accountNumber, type, orders, "trigger-order": triggerOrder, source }) => {
       try {
-        const order = orderFields;
-        const result = await (getClient().orderService as any).postComplexOrderDryRun(accountNumber, order);
+        if (type === "OTOCO" && !triggerOrder) {
+          return { content: [{ type: "text" as const, text: "Error: trigger-order is required when type is 'OTOCO'" }], isError: true };
+        }
+        const body: Record<string, any> = { type, orders };
+        if (triggerOrder) body["trigger-order"] = triggerOrder;
+        if (source) body.source = source;
+        const result = await (getClient().orderService as any).postComplexOrderDryRun(accountNumber, body);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
@@ -292,23 +311,42 @@ export function registerOrderTools(server: McpServer) {
   server.tool(
     "create_complex_order",
     [
-      "Create a complex (multi-leg) order such as spreads, straddles, etc.",
+      "Create a complex (multi-leg) order such as spreads, straddles, OCO brackets, or OTOCO entry+bracket combos.",
       "Always run complex_order_dry_run first to validate the order before submitting.",
-    ].join(" "),
+      "",
+      "The body requires a top-level `type` and an `orders` array:",
+      "  type='BLAST_ALL' — execute all legs simultaneously (use for spreads, straddles, condors, calendars)",
+      "  type='OCO'       — two closing orders; first fill cancels the other (profit target + stop)",
+      "  type='OTOCO'     — entry order triggers a bracket; add `trigger-order` field alongside `orders`",
+      "",
+      "Example (iron condor as BLAST_ALL):",
+      '  { "type": "BLAST_ALL", "orders": [{ "time-in-force": "Day", "order-type": "Limit", "price": 2.50, "price-effect": "Credit", "legs": [<4 legs>] }] }',
+    ].join("\n"),
     {
       accountNumber: z.string().describe("The account number"),
-      "time-in-force": ComplexOrderSchema.shape["time-in-force"],
-      "order-type": ComplexOrderSchema.shape["order-type"],
-      price: ComplexOrderSchema.shape.price,
-      "price-effect": ComplexOrderSchema.shape["price-effect"],
-      legs: ComplexOrderSchema.shape.legs,
-      source: ComplexOrderSchema.shape["source"],
+      type: z.enum(["BLAST_ALL", "OCO", "OTOCO"]).describe(
+        "Complex order type: 'BLAST_ALL' (multi-leg spread/straddle/condor/calendar executed simultaneously), " +
+        "'OCO' (two orders, first fill cancels the other), or 'OTOCO' (entry order triggers a bracket — also supply trigger-order)."
+      ),
+      orders: z.preprocess(coerceToArray, z.array(SingleComplexOrderSchema)).describe(
+        "Array of individual orders. For BLAST_ALL use one element with all legs. " +
+        "For OCO/OTOCO use two elements (profit target + stop loss)."
+      ),
+      "trigger-order": SingleComplexOrderSchema.optional().describe(
+        "Entry order for OTOCO type. Omit for BLAST_ALL and OCO."
+      ),
+      source: z.string().optional().describe("Optional source identifier"),
     },
     DESTRUCTIVE,
-    async ({ accountNumber, ...orderFields }) => {
+    async ({ accountNumber, type, orders, "trigger-order": triggerOrder, source }) => {
       try {
-        const order = orderFields;
-        const result = await getClient().orderService.createComplexOrder(accountNumber, order);
+        if (type === "OTOCO" && !triggerOrder) {
+          return { content: [{ type: "text" as const, text: "Error: trigger-order is required when type is 'OTOCO'" }], isError: true };
+        }
+        const body: Record<string, any> = { type, orders };
+        if (triggerOrder) body["trigger-order"] = triggerOrder;
+        if (source) body.source = source;
+        const result = await getClient().orderService.createComplexOrder(accountNumber, body);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };

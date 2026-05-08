@@ -337,7 +337,8 @@ export function registerMarketDataTools(server: McpServer) {
         const collectedEvents = (await Promise.all(perSymbolPromises)).flat();
 
         if (collectedEvents.length === 0) {
-          return { content: [{ type: "text" as const, text: `No quote data received for ${symbols.join(', ')} within ${timeoutMs}ms. Market may be closed or symbols may be invalid.` }] };
+          const channelState = (client.quoteStreamer as any).dxLinkFeed?.getState?.() ?? "unknown";
+          return { content: [{ type: "text" as const, text: `No quote data received for ${symbols.join(', ')} within ${timeoutMs}ms. Channel state: ${channelState}. Market may be closed, symbols may be invalid, or the streaming connection may need reconnecting (call check_auth_status to reconnect).` }] };
         }
 
         // Re-map streamer symbols back to the original user-supplied symbols,
@@ -471,9 +472,9 @@ export function registerMarketDataTools(server: McpServer) {
 
   server.tool(
     "get_options_greeks",
-    "Get options Greeks (delta, gamma, theta, vega, rho) by subscribing to Greeks events via DXLink for specific option symbols. This tool accepts fully-qualified option streamer symbols only (e.g. '.AAPL240119C185'); futures root symbols are not applicable here. Use 'detail' to control response size: 'summary' returns only symbol + the 5 Greek values; 'standard' returns Greeks plus implied volatility and underlying price (default); 'full' returns the raw DXLink event. Use 'format: html' for a visual Greeks card.",
+    "Get options Greeks (delta, gamma, theta, vega, rho) by subscribing to Greeks events via DXLink for specific option symbols. IMPORTANT: This tool requires DXLink streamer symbols (e.g. '.AAPL240119C185', '.QQQ260626P660'), NOT OCC format symbols (e.g. 'QQQ   260626P00660000'). Get the correct symbol from the call-streamer-symbol or put-streamer-symbol fields returned by get_option_chain or get_nested_option_chain. Use 'detail' to control response size: 'summary' returns only symbol + the 5 Greek values; 'standard' returns Greeks plus implied volatility and underlying price (default); 'full' returns the raw DXLink event. Use 'format: html' for a visual Greeks card.",
     {
-      optionSymbols: z.preprocess(coerceToArray, z.array(z.string())).describe("Array of option streamer symbols. Use call-streamer-symbol or put-streamer-symbol from option chain endpoints."),
+      optionSymbols: z.preprocess(coerceToArray, z.array(z.string())).describe("Array of DXLink option streamer symbols (e.g. ['.AAPL240119C185']). Use call-streamer-symbol or put-streamer-symbol from option chain endpoints. OCC format symbols with spaces will NOT work."),
       timeoutMs: z.number().default(5000).describe("Timeout in milliseconds to wait for Greeks data (default 5000)"),
       detail: z.enum(["summary", "standard", "full"]).default("standard").describe("Response detail level: 'summary' (symbol + delta, gamma, theta, vega, rho), 'standard' (Greeks + implied volatility + underlying price, default), 'full' (complete raw DXLink event)"),
       format: z.enum(["json", "html"]).default("json").describe("Output format: 'json' (default) or 'html' for a visual Greeks card artifact"),
@@ -481,6 +482,20 @@ export function registerMarketDataTools(server: McpServer) {
     READ_ONLY,
     async ({ optionSymbols, timeoutMs, detail, format }) => {
       try {
+        // Detect OCC-format symbols early and return a clear actionable error.
+        // OCC format: left-padded 6-char root + 6-digit expiry (YYMMDD) + P/C + 8-digit strike
+        // e.g. "QQQ   260626P00660000" — these contain spaces and won't match DXLink.
+        const occFormatSymbols = optionSymbols.filter(s => /\s/.test(s) || /^[A-Z ]{6}\d{6}[PC]\d{8}$/.test(s));
+        if (occFormatSymbols.length > 0) {
+          return {
+            content: [{
+              type: "text" as const,
+              text: `Error: OCC format symbols are not accepted by this tool: ${occFormatSymbols.map(s => JSON.stringify(s)).join(", ")}.\n\nThis tool requires DXLink streamer symbols, which look like ".QQQ260626P660" or ".AAPL240119C185".\n\nTo get the correct symbol, call get_option_chain or get_nested_option_chain and use the "call-streamer-symbol" or "put-streamer-symbol" field from the response.`,
+            }],
+            isError: true,
+          };
+        }
+
         const client = getClient();
 
         const wasConnected = (client.quoteStreamer as any).isConnected;

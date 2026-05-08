@@ -289,22 +289,25 @@ Validate a **single-leg simple** order before submitting. Use ONLY for `Limit`, 
 #### `complex_order_dry_run`
 Validate a **complex (multi-leg)** order before submitting. Supports `Net Debit`, `Net Credit`, `Limit`, and `Market` order types. Always run this before `create_complex_order` for spreads, straddles, strangles, condors, calendars, and any order with 2+ legs.
 - **Returns:** fees, buying-power effect, warnings, fill estimate
-- **Params:** `accountNumber`, `time-in-force`, `order-type`, `price`, `price-effect`, `legs[]`, `source` (optional)
+- **Params:** `accountNumber`, `type` (`"BLAST_ALL"` | `"OCO"` | `"OTOCO"`), `orders[]` (each with `time-in-force`, `order-type`, `price`, `price-effect`, `legs[]`), `trigger-order` (required for OTOCO), `source` (optional)
 
-**4-leg iron condor example (Net Credit):**
+**4-leg iron condor example (BLAST_ALL):**
 ```json
 {
   "accountNumber": "5WX12345",
-  "time-in-force": "Day",
-  "order-type": "Net Credit",
-  "price": 2.50,
-  "price-effect": "Credit",
-  "legs": [
-    { "instrument-type": "Equity Option", "symbol": "SPY   250117C00465000", "action": "Buy to Open", "quantity": 1 },
-    { "instrument-type": "Equity Option", "symbol": "SPY   250117C00460000", "action": "Sell to Open", "quantity": 1 },
-    { "instrument-type": "Equity Option", "symbol": "SPY   250117P00445000", "action": "Sell to Open", "quantity": 1 },
-    { "instrument-type": "Equity Option", "symbol": "SPY   250117P00440000", "action": "Buy to Open", "quantity": 1 }
-  ]
+  "type": "BLAST_ALL",
+  "orders": [{
+    "time-in-force": "Day",
+    "order-type": "Limit",
+    "price": 2.50,
+    "price-effect": "Credit",
+    "legs": [
+      { "instrument-type": "Equity Option", "symbol": "SPY   250117C00465000", "action": "Buy to Open", "quantity": 1 },
+      { "instrument-type": "Equity Option", "symbol": "SPY   250117C00460000", "action": "Sell to Open", "quantity": 1 },
+      { "instrument-type": "Equity Option", "symbol": "SPY   250117P00445000", "action": "Sell to Open", "quantity": 1 },
+      { "instrument-type": "Equity Option", "symbol": "SPY   250117P00440000", "action": "Buy to Open", "quantity": 1 }
+    ]
+  }]
 }
 ```
 
@@ -314,8 +317,8 @@ Submit the order after reviewing the dry-run output.
 
 #### `create_complex_order`
 Multi-leg spread/combo in one order. Always run `complex_order_dry_run` first to validate.
-- **Params:** same as `complex_order_dry_run` plus optional `source`
-- **Use for:** spreads, straddles, iron condors, calendars
+- **Params:** `accountNumber`, `type` (`"BLAST_ALL"` | `"OCO"` | `"OTOCO"`), `orders[]`, `trigger-order` (required for OTOCO), `source` (optional)
+- **Use for:** spreads, straddles, iron condors, calendars, OCO brackets, OTOCO entry+bracket
 
 #### `cancel_order` / `cancel_complex_order`
 Cancel a live order.

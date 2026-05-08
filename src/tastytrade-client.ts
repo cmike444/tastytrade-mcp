@@ -114,9 +114,14 @@ export function getOrCreateInflightQuote(
   }
 
   const events: any[] = [];
+  let eventCount = 0;
   const listener = (evts: any[]) => {
     for (const e of evts) {
+      if (eventCount === 0) {
+        logger.info(`[DXLink] First event batch for ${symbol}: ${evts.length} event(s), types=[${evts.map((x: any) => x.eventType ?? "?").join(",")}]`);
+      }
       if (e.eventSymbol === symbol) events.push(e);
+      eventCount++;
     }
   };
 
@@ -125,6 +130,7 @@ export function getOrCreateInflightQuote(
   // Clear stale pre-reconnect events if the WebSocket reconnects mid-collection.
   const unsubReconnect = onReconnect(() => {
     events.length = 0;
+    eventCount = 0;
     logger.info(`[DXLink] Reconnect detected mid-collection for ${symbol} — event buffer cleared.`);
   });
 
@@ -133,6 +139,16 @@ export function getOrCreateInflightQuote(
       unsubReconnect();
       qs.removeEventListener(listener);
       inflightQuoteRequests.delete(symbol);
+      if (events.length === 0) {
+        const channelState = qs.dxLinkFeed?.getState?.() ?? "unknown";
+        logger.warn(
+          `[DXLink] Timeout for ${symbol} after ${timeoutMs}ms — ` +
+          `${eventCount} raw events received, ${events.length} matched symbol. ` +
+          `Channel state: ${channelState}`
+        );
+      } else {
+        logger.info(`[DXLink] Collected ${events.length} event(s) for ${symbol} within ${timeoutMs}ms.`);
+      }
       resolve(events);
     }, timeoutMs);
   });
@@ -417,15 +433,76 @@ function attachQuoteStreamerHandlers(c: TastytradeClient): void {
       return;
     }
 
+    // Use FULL data format (not COMPACT) so that events are delivered as plain
+    // named-property objects.  COMPACT requires the server to first send a
+    // FEED_CONFIG with eventFields before any data can be parsed; if FEED_DATA
+    // arrives before FEED_CONFIG the DXLink library throws "Cannot find event
+    // fields for event type" and silently drops every event, causing tool
+    // timeouts even when the WebSocket is connected and the market is open.
     qs.dxLinkFeed = new DXLinkFeed(wsClient, FeedContract.AUTO);
     qs.dxLinkFeed.configure({
       acceptAggregationPeriod: 10,
-      acceptDataFormat: FeedDataFormat.COMPACT,
+      acceptDataFormat: FeedDataFormat.FULL,
     });
 
     qs.eventListeners.forEach((listener: any) =>
       qs.dxLinkFeed.addEventListener(listener)
     );
+
+    // --- Await the DXLink feed channel reaching OPENED state ---
+    // The DXLink feed opens a channel over the already-connected WebSocket.
+    // addSubscriptions() only sends FEED_SUBSCRIPTION to the server when the
+    // channel state is OPENED; subscriptions added while the channel is still
+    // REQUESTED are queued in pendingAdd.  If we return from patchedConnect
+    // before OPENED fires and the tool's timeout window is short, those
+    // subscriptions may never reach the server before the tool gives up.
+    // Waiting here ensures that callers can subscribe immediately after connect()
+    // returns and data will flow within the batch-subscription window (100 ms).
+    await new Promise<void>((resolve) => {
+      const feed = qs.dxLinkFeed;
+      if (!feed) { resolve(); return; }
+
+      const currentState = typeof feed.getState === "function" ? feed.getState() : null;
+      if (currentState === "OPENED") {
+        logger.info("[DXLink] Feed channel already OPENED.");
+        resolve();
+        return;
+      }
+
+      if (typeof feed.addStateChangeListener !== "function") {
+        logger.warn("[DXLink] Feed has no addStateChangeListener — proceeding without OPENED wait.");
+        resolve();
+        return;
+      }
+
+      const fallback = setTimeout(() => {
+        logger.warn("[DXLink] Feed channel OPENED timeout — proceeding anyway.");
+        feed.removeStateChangeListener?.(channelReadyListener);
+        resolve();
+      }, WS_CONNECT_READY_TIMEOUT_MS);
+
+      const channelReadyListener = (state: string) => {
+        if (state === "OPENED") {
+          logger.info("[DXLink] Feed channel OPENED — subscriptions can now be sent.");
+          clearTimeout(fallback);
+          feed.removeStateChangeListener?.(channelReadyListener);
+          resolve();
+        } else if (state === "CLOSED") {
+          logger.warn("[DXLink] Feed channel CLOSED before OPENED — aborting channel wait.");
+          clearTimeout(fallback);
+          feed.removeStateChangeListener?.(channelReadyListener);
+          resolve();
+        }
+      };
+      feed.addStateChangeListener(channelReadyListener);
+    });
+
+    // Bail out again in case a newer connect attempt superseded us while we
+    // were waiting for the feed channel to open.
+    if (myVersion !== currentConnectVersion) {
+      logger.warn("[DXLink] Connect attempt superseded during channel-open wait — aborting.");
+      return;
+    }
 
     quoteStreamerConnected = true;
     // Keep qs.isConnected in sync so market-data tools can skip the connect()
@@ -840,11 +917,18 @@ export function getConnectionStatus() {
   // rather than recomputing Date.now() + expiresIn on every call, which would drift.
   const expiration = client?.accessToken?.expiration;
   const tokenExpiresAt = expiration instanceof Date ? expiration.toISOString() : null;
+
+  // Expose the DXLink feed channel state so callers can distinguish between
+  // "WebSocket connected" and "DXLink channel open and ready to stream".
+  const qs = client?.quoteStreamer as any;
+  const dxLinkChannelState: string | null = qs?.dxLinkFeed?.getState?.() ?? null;
+
   return {
     isAuthenticated,
     keepaliveActive,
     backtestTokenAvailable: sessionToken !== null,
     quoteStreamerConnected,
+    dxLinkChannelState,
     tokenExpiresAt,
     lastKeepaliveAt: lastKeepaliveAt ? new Date(lastKeepaliveAt).toISOString() : null,
     circuitBreaker: getCircuitBreakerStatus(),
