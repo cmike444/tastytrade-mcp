@@ -939,6 +939,26 @@ def make_tests():
         ),
 
         # ------------------------------------------------------------------
+        # otoco_no_bracket — create_complex_order OTOCO with no child orders
+        # Regression guard: verifies opening legs are read from trigger-order.legs
+        # (not a flat top-level legs key) and that missing bracket orders triggers BLOCK
+        # ------------------------------------------------------------------
+        Test(
+            name="otoco_no_bracket / tt-require-bracket → BLOCK (OTOCO missing bracket children)",
+            fixture="otoco_no_bracket.json",
+            hook="tt-require-bracket",
+            expected_exit=2,
+            setup=plan_on,
+            teardown=plan_off,
+            note=(
+                "create_complex_order OTOCO with STO legs in trigger-order.legs but empty orders[]. "
+                "Hook must read opening legs from trigger-order.legs (not flat top-level legs) and "
+                "block because < 2 bracket children are present. Regression guard for nested schema parsing."
+            ),
+            stdout_contains="BLOCKED",
+        ),
+
+        # ------------------------------------------------------------------
         # Fail-closed: concentration cap with missing sidecar files
         # ------------------------------------------------------------------
         Test(

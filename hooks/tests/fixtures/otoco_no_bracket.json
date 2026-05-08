@@ -1,0 +1,27 @@
+{
+  "_comment": "Scenario: create_complex_order with type=OTOCO and STO legs inside trigger-order, but orders[] is empty (no bracket children). tt-require-bracket must BLOCK (exit 2) because the OTOCO structure is present but there are fewer than 2 child bracket orders. Verifies that the hook correctly reads opening legs from trigger-order.legs (not a flat top-level legs key) and then validates the bracket children from orders[].",
+  "tool_name": "create_complex_order",
+  "tool_input": {
+    "type": "OTOCO",
+    "trigger-order": {
+      "time-in-force": "Day",
+      "order-type": "Limit",
+      "price": 5.50,
+      "legs": [
+        {
+          "instrument-type": "Equity Option",
+          "symbol": "SPY 260619C00580000",
+          "action": "Sell to Open",
+          "quantity": 1
+        },
+        {
+          "instrument-type": "Equity Option",
+          "symbol": "SPY 260619P00520000",
+          "action": "Sell to Open",
+          "quantity": 1
+        }
+      ]
+    },
+    "orders": []
+  }
+}
