@@ -759,6 +759,17 @@ def make_tests():
         ),
 
         # ------------------------------------------------------------------
+        # naked_strangle_no_bracket — two STO legs, no OTOCO, create_order
+        # ------------------------------------------------------------------
+        Test(
+            name="naked_strangle_no_bracket / tt-require-bracket → BLOCK (no OTOCO, multi-leg strangle)",
+            fixture="naked_strangle_no_bracket.json",
+            hook="tt-require-bracket",
+            expected_exit=2,
+            note="Two STO legs (call + put, different strikes) via create_order with no bracket must be blocked.",
+        ),
+
+        # ------------------------------------------------------------------
         # bracketed_strangle — OTOCO strangle, valid 50%/2x bracket
         # ------------------------------------------------------------------
         Test(

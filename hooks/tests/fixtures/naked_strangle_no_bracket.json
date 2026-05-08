@@ -1,0 +1,23 @@
+{
+  "_comment": "Scenario: naked short strangle via create_order — two STO legs (call + put, different strikes), no OTOCO bracket. tt-require-bracket must BLOCK (exit 2). Both legs are unhedged, so the hook should detect naked exposure on the underlying.",
+  "tool_name": "create_order",
+  "tool_input": {
+    "time-in-force": "Day",
+    "order-type": "Limit",
+    "price": 5.50,
+    "legs": [
+      {
+        "instrument-type": "Equity Option",
+        "symbol": "SPY 260619C00580000",
+        "action": "Sell to Open",
+        "quantity": 1
+      },
+      {
+        "instrument-type": "Equity Option",
+        "symbol": "SPY 260619P00520000",
+        "action": "Sell to Open",
+        "quantity": 1
+      }
+    ]
+  }
+}
