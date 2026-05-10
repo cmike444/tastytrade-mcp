@@ -1,5 +1,24 @@
 # Order Execution Reference
 
+## Tool Routing Table
+
+| What you want to do | Entry tool | Dry-run tool |
+|---|---|---|
+| Single-leg equity / option / future / crypto | `create_order` | `order_dry_run` |
+| Multi-leg spread (vertical, debit, credit) | `create_order` | `order_dry_run` |
+| Straddle or strangle | `create_order` | `order_dry_run` |
+| Iron condor or iron butterfly | `create_order` | `order_dry_run` |
+| Calendar spread | `create_order` | `order_dry_run` |
+| Ratio spread / fly | `create_order` | `order_dry_run` |
+| OCO bracket (profit target + stop on existing position) | `create_complex_order` | `complex_order_dry_run` |
+| OTOCO (opening entry + bracket simultaneously) | `create_complex_order` | `complex_order_dry_run` |
+| OTO (one order triggers another on fill) | `create_complex_order` | `complex_order_dry_run` |
+
+> `create_complex_order` is **only** for bracket types (OCO / OTOCO / OTO).
+> All spread/straddle/condor/calendar entries — even multi-leg — use `create_order`.
+
+---
+
 ## Core Rules
 
 - **Price sign**: negative = debit (you pay to open), positive = credit (you receive to open)

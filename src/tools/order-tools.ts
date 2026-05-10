@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getClient } from "../tastytrade-client.js";
+import { getClient, complexOrderDryRun } from "../tastytrade-client.js";
 import { formatApiError } from "./error-utils.js";
 import { coerceToArray } from "./schema-utils.js";
 import { extractItems } from "./render-utils.js";
@@ -302,12 +302,10 @@ export function registerOrderTools(server: McpServer) {
         if (type === "OTOCO" && !triggerOrder) {
           return { content: [{ type: "text" as const, text: "Error: trigger-order is required when type is 'OTOCO'" }], isError: true };
         }
-        const body: Record<string, any> = { type, orders };
+        const body: Record<string, unknown> = { type, orders };
         if (triggerOrder) body["trigger-order"] = triggerOrder;
         if (source) body.source = source;
-        const svc = getClient().orderService as any;
-        const raw = await svc.httpClient.postData(`/accounts/${accountNumber}/complex-orders/dry-run`, body, {});
-        const result = raw?.data ?? raw;
+        const result = await complexOrderDryRun(accountNumber, body);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };

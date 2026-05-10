@@ -581,6 +581,32 @@ export function getClient(): TastytradeClient {
 }
 
 /**
+ * Calls POST /accounts/{accountNumber}/complex-orders/dry-run.
+ * The TastyTrade JS SDK's OrderService does not expose this endpoint, so we
+ * call it directly via the SDK's internal httpClient. The `as any` cast is
+ * intentionally isolated here so callers receive a fully-typed signature.
+ */
+export async function complexOrderDryRun(
+  accountNumber: string,
+  body: Record<string, unknown>
+): Promise<unknown> {
+  if (!client) {
+    throw new Error("TastyTrade client is not initialized. Authentication has not completed.");
+  }
+  const hc = (client as any).httpClient as {
+    postData: (path: string, body: unknown, params: unknown) => Promise<{ data?: unknown }>;
+  };
+  if (typeof hc?.postData !== "function") {
+    throw new Error(
+      "httpClient.postData is not available — SDK internals may have changed. " +
+      "Cannot call the complex-orders/dry-run endpoint."
+    );
+  }
+  const raw = await hc.postData(`/accounts/${accountNumber}/complex-orders/dry-run`, body, {});
+  return raw?.data ?? raw;
+}
+
+/**
  * Fetches a backtester-compatible OAuth access token by calling /oauth/token
  * with grant_type=refresh_token but WITHOUT the `scope` parameter.
  *
