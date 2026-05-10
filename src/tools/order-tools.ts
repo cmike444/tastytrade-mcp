@@ -263,31 +263,36 @@ export function registerOrderTools(server: McpServer) {
   server.tool(
     "complex_order_dry_run",
     [
-      "Validate a complex (multi-leg) order without placing it.",
-      "Supports Net Debit, Net Credit, Limit, and Market order types.",
-      "Use this before create_complex_order for spreads, straddles, strangles, condors, calendars, OCO, OTOCO, and any order with 2+ legs.",
+      "Validate an OCO, OTOCO, or OTO bracket order without placing it.",
       "Returns preflight information including fees, buying power effect, and warnings.",
       "",
-      "The body requires a top-level `type` and an `orders` array:",
-      "  type='BLAST_ALL' — execute all legs simultaneously (use for spreads, straddles, condors, calendars)",
-      "  type='OCO'       — two closing orders; first fill cancels the other (profit target + stop)",
-      "  type='OTOCO'     — entry order triggers a bracket; add `trigger-order` field alongside `orders`",
+      "ROUTING NOTE: This tool is ONLY for bracket order types (OCO / OTOCO / OTO).",
+      "Multi-leg spreads, straddles, strangles, condors, and calendars are NOT complex orders —",
+      "submit them via order_dry_run or create_order with multiple legs in a single order.",
       "",
-      "Example (vertical spread):",
-      '  { "type": "BLAST_ALL", "orders": [{ "time-in-force": "Day", "order-type": "Limit", "price": 1.50, "price-effect": "Credit", "legs": [...] }] }',
+      "  type='OCO'   — two closing orders; first fill cancels the other (profit target + stop)",
+      "  type='OTOCO' — entry order (in trigger-order) triggers a bracket (orders array)",
+      "  type='OTO'   — one order triggers another when filled",
+      "",
+      "Example (OCO bracket for an existing short strangle):",
+      '  { "type": "OCO", "orders": [',
+      '    { "time-in-force": "GTC", "order-type": "Limit", "price": -2.75, "legs": [...close legs...] },',
+      '    { "time-in-force": "GTC", "order-type": "Limit", "price": -11.00, "legs": [...same close legs...] }',
+      '  ] }',
     ].join("\n"),
     {
       accountNumber: z.string().describe("The account number"),
-      type: z.enum(["BLAST_ALL", "OCO", "OTOCO"]).describe(
-        "Complex order type: 'BLAST_ALL' (multi-leg spread/straddle/condor/calendar executed simultaneously), " +
-        "'OCO' (two orders, first fill cancels the other), or 'OTOCO' (entry order triggers a bracket — also supply trigger-order)."
+      type: z.enum(["OCO", "OTOCO", "OTO"]).describe(
+        "Bracket order type: 'OCO' (two closing orders, first fill cancels the other), " +
+        "'OTOCO' (entry order in trigger-order triggers a bracket in orders array), " +
+        "'OTO' (one order triggers another on fill). " +
+        "NOT for spreads/straddles/condors/calendars — those use create_order with multiple legs."
       ),
       orders: z.preprocess(coerceToArray, z.array(SingleComplexOrderSchema)).describe(
-        "Array of individual orders. For BLAST_ALL use one element with all legs. " +
-        "For OCO/OTOCO use two elements (profit target + stop loss)."
+        "For OCO/OTO: two orders (profit target + stop loss). For OTOCO: the bracket child orders."
       ),
       "trigger-order": SingleComplexOrderSchema.optional().describe(
-        "Entry order for OTOCO type. Omit for BLAST_ALL and OCO."
+        "Entry order for OTOCO type (the opening order that triggers the bracket). Required for OTOCO, omit for OCO/OTO."
       ),
       source: z.string().optional().describe("Optional source identifier"),
     },
@@ -300,7 +305,9 @@ export function registerOrderTools(server: McpServer) {
         const body: Record<string, any> = { type, orders };
         if (triggerOrder) body["trigger-order"] = triggerOrder;
         if (source) body.source = source;
-        const result = await (getClient().orderService as any).postComplexOrderDryRun(accountNumber, body);
+        const svc = getClient().orderService as any;
+        const raw = await svc.httpClient.postData(`/accounts/${accountNumber}/complex-orders/dry-run`, body, {});
+        const result = raw?.data ?? raw;
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `Error: ${formatApiError(error)}` }], isError: true };
@@ -311,29 +318,30 @@ export function registerOrderTools(server: McpServer) {
   server.tool(
     "create_complex_order",
     [
-      "Create a complex (multi-leg) order such as spreads, straddles, OCO brackets, or OTOCO entry+bracket combos.",
+      "Place an OCO, OTOCO, or OTO bracket order.",
       "Always run complex_order_dry_run first to validate the order before submitting.",
       "",
-      "The body requires a top-level `type` and an `orders` array:",
-      "  type='BLAST_ALL' — execute all legs simultaneously (use for spreads, straddles, condors, calendars)",
-      "  type='OCO'       — two closing orders; first fill cancels the other (profit target + stop)",
-      "  type='OTOCO'     — entry order triggers a bracket; add `trigger-order` field alongside `orders`",
+      "ROUTING NOTE: This tool is ONLY for bracket order types (OCO / OTOCO / OTO).",
+      "Multi-leg spreads, straddles, strangles, condors, and calendars are NOT complex orders —",
+      "submit them via create_order with multiple legs in a single order (use order_dry_run to preflight).",
       "",
-      "Example (iron condor as BLAST_ALL):",
-      '  { "type": "BLAST_ALL", "orders": [{ "time-in-force": "Day", "order-type": "Limit", "price": 2.50, "price-effect": "Credit", "legs": [<4 legs>] }] }',
+      "  type='OCO'   — two closing orders; first fill cancels the other (profit target + stop)",
+      "  type='OTOCO' — entry order (in trigger-order) triggers a bracket (orders array)",
+      "  type='OTO'   — one order triggers another when filled",
     ].join("\n"),
     {
       accountNumber: z.string().describe("The account number"),
-      type: z.enum(["BLAST_ALL", "OCO", "OTOCO"]).describe(
-        "Complex order type: 'BLAST_ALL' (multi-leg spread/straddle/condor/calendar executed simultaneously), " +
-        "'OCO' (two orders, first fill cancels the other), or 'OTOCO' (entry order triggers a bracket — also supply trigger-order)."
+      type: z.enum(["OCO", "OTOCO", "OTO"]).describe(
+        "Bracket order type: 'OCO' (two closing orders, first fill cancels the other), " +
+        "'OTOCO' (entry order in trigger-order triggers a bracket in orders array), " +
+        "'OTO' (one order triggers another on fill). " +
+        "NOT for spreads/straddles/condors/calendars — those use create_order with multiple legs."
       ),
       orders: z.preprocess(coerceToArray, z.array(SingleComplexOrderSchema)).describe(
-        "Array of individual orders. For BLAST_ALL use one element with all legs. " +
-        "For OCO/OTOCO use two elements (profit target + stop loss)."
+        "For OCO/OTO: two orders (profit target + stop loss). For OTOCO: the bracket child orders."
       ),
       "trigger-order": SingleComplexOrderSchema.optional().describe(
-        "Entry order for OTOCO type. Omit for BLAST_ALL and OCO."
+        "Entry order for OTOCO type (the opening order that triggers the bracket). Required for OTOCO, omit for OCO/OTO."
       ),
       source: z.string().optional().describe("Optional source identifier"),
     },

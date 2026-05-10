@@ -4,7 +4,7 @@
 
 - **Price sign**: negative = debit (you pay to open), positive = credit (you receive to open)
 - **JSON keys use dashes**: `instrument-type`, `time-in-force`, `order-type` (not underscores)
-- **ALWAYS run a dry run first** — use `order_dry_run` for single-leg simple orders; use `complex_order_dry_run` for multi-leg orders (spreads, condors, straddles, calendars) and Net Debit / Net Credit types
+- **ALWAYS run a dry run first** — use `order_dry_run` for any spread/straddle/strangle/condor/calendar (all multi-leg entries); use `complex_order_dry_run` only for bracket types (OCO / OTOCO / OTO)
 - **Never skip the startup sequence** — account balances + positions + live orders before every order
 
 ---
@@ -170,116 +170,95 @@ Example: AAPL Jan 19 2024 $150 call → `AAPL 240119C00150000`
 
 ---
 
-## Multi-Leg Complex Order Templates
+## Multi-Leg Order Templates
 
-Use `create_complex_order` for all multi-leg strategies. Always run `complex_order_dry_run` first (not `order_dry_run`) — multi-leg and Net Debit / Net Credit orders are rejected by the simple order dry-run endpoint.
-
-The `/complex-orders` API always requires a top-level `type` and an `orders` array:
-- **`BLAST_ALL`** — execute all legs simultaneously (use for spreads, straddles, condors, calendars — anything that is a single entry with multiple legs)
-- **`OCO`** — two closing orders where the first fill cancels the other (profit target + stop)
-- **`OTOCO`** — entry order (in `trigger-order`) triggers a bracket (`orders` array)
+> **Routing rule**: Spreads, straddles, strangles, condors, and calendars are **not** complex orders.
+> Send them via `create_order` (preflight with `order_dry_run`) with all legs in a single order object.
+> Use `create_complex_order` / `complex_order_dry_run` **only** for bracket types: OCO, OTOCO, OTO.
 
 ### Vertical Spread (credit put spread example)
 ```json
 {
-  "type": "BLAST_ALL",
-  "orders": [{
-    "time-in-force": "Day",
-    "order-type": "Limit",
-    "price": 1.50,
-    "price-effect": "Credit",
-    "legs": [
-      {"instrument-type": "Equity Option", "symbol": "SPY 240119P00450000", "action": "Sell to Open", "quantity": 1},
-      {"instrument-type": "Equity Option", "symbol": "SPY 240119P00445000", "action": "Buy to Open", "quantity": 1}
-    ]
-  }]
+  "time-in-force": "Day",
+  "order-type": "Limit",
+  "price": 1.50,
+  "price-effect": "Credit",
+  "legs": [
+    {"instrument-type": "Equity Option", "symbol": "SPY 240119P00450000", "action": "Sell to Open", "quantity": 1},
+    {"instrument-type": "Equity Option", "symbol": "SPY 240119P00445000", "action": "Buy to Open", "quantity": 1}
+  ]
 }
 ```
 
 ### Short Straddle
 ```json
 {
-  "type": "BLAST_ALL",
-  "orders": [{
-    "time-in-force": "Day",
-    "order-type": "Limit",
-    "price": 8.00,
-    "price-effect": "Credit",
-    "legs": [
-      {"instrument-type": "Equity Option", "symbol": "SPY 240119C00455000", "action": "Sell to Open", "quantity": 1},
-      {"instrument-type": "Equity Option", "symbol": "SPY 240119P00455000", "action": "Sell to Open", "quantity": 1}
-    ]
-  }]
+  "time-in-force": "Day",
+  "order-type": "Limit",
+  "price": 8.00,
+  "price-effect": "Credit",
+  "legs": [
+    {"instrument-type": "Equity Option", "symbol": "SPY 240119C00455000", "action": "Sell to Open", "quantity": 1},
+    {"instrument-type": "Equity Option", "symbol": "SPY 240119P00455000", "action": "Sell to Open", "quantity": 1}
+  ]
 }
 ```
 
 ### Short Strangle
 ```json
 {
-  "type": "BLAST_ALL",
-  "orders": [{
-    "time-in-force": "Day",
-    "order-type": "Limit",
-    "price": 5.50,
-    "price-effect": "Credit",
-    "legs": [
-      {"instrument-type": "Equity Option", "symbol": "SPY 240119C00460000", "action": "Sell to Open", "quantity": 1},
-      {"instrument-type": "Equity Option", "symbol": "SPY 240119P00445000", "action": "Sell to Open", "quantity": 1}
-    ]
-  }]
+  "time-in-force": "Day",
+  "order-type": "Limit",
+  "price": 5.50,
+  "price-effect": "Credit",
+  "legs": [
+    {"instrument-type": "Equity Option", "symbol": "SPY 240119C00460000", "action": "Sell to Open", "quantity": 1},
+    {"instrument-type": "Equity Option", "symbol": "SPY 240119P00445000", "action": "Sell to Open", "quantity": 1}
+  ]
 }
 ```
 
 ### Iron Condor
 ```json
 {
-  "type": "BLAST_ALL",
-  "orders": [{
-    "time-in-force": "Day",
-    "order-type": "Limit",
-    "price": 2.50,
-    "price-effect": "Credit",
-    "legs": [
-      {"instrument-type": "Equity Option", "symbol": "SPY 240119C00465000", "action": "Buy to Open", "quantity": 1},
-      {"instrument-type": "Equity Option", "symbol": "SPY 240119C00460000", "action": "Sell to Open", "quantity": 1},
-      {"instrument-type": "Equity Option", "symbol": "SPY 240119P00445000", "action": "Sell to Open", "quantity": 1},
-      {"instrument-type": "Equity Option", "symbol": "SPY 240119P00440000", "action": "Buy to Open", "quantity": 1}
-    ]
-  }]
+  "time-in-force": "Day",
+  "order-type": "Limit",
+  "price": 2.50,
+  "price-effect": "Credit",
+  "legs": [
+    {"instrument-type": "Equity Option", "symbol": "SPY 240119C00465000", "action": "Buy to Open", "quantity": 1},
+    {"instrument-type": "Equity Option", "symbol": "SPY 240119C00460000", "action": "Sell to Open", "quantity": 1},
+    {"instrument-type": "Equity Option", "symbol": "SPY 240119P00445000", "action": "Sell to Open", "quantity": 1},
+    {"instrument-type": "Equity Option", "symbol": "SPY 240119P00440000", "action": "Buy to Open", "quantity": 1}
+  ]
 }
 ```
 
 ### Calendar Spread (long back month, short front month)
 ```json
 {
-  "type": "BLAST_ALL",
-  "orders": [{
-    "time-in-force": "Day",
-    "order-type": "Limit",
-    "price": -1.20,
-    "price-effect": "Debit",
-    "legs": [
-      {"instrument-type": "Equity Option", "symbol": "SPY 240216C00455000", "action": "Buy to Open", "quantity": 1},
-      {"instrument-type": "Equity Option", "symbol": "SPY 240119C00455000", "action": "Sell to Open", "quantity": 1}
-    ]
-  }]
+  "time-in-force": "Day",
+  "order-type": "Limit",
+  "price": -1.20,
+  "price-effect": "Debit",
+  "legs": [
+    {"instrument-type": "Equity Option", "symbol": "SPY 240216C00455000", "action": "Buy to Open", "quantity": 1},
+    {"instrument-type": "Equity Option", "symbol": "SPY 240119C00455000", "action": "Sell to Open", "quantity": 1}
+  ]
 }
 ```
 
 ### Closing a Spread (reverse legs)
 ```json
 {
-  "type": "BLAST_ALL",
-  "orders": [{
-    "time-in-force": "Day",
-    "order-type": "Limit",
-    "price": -0.50,
-    "price-effect": "Debit",
-    "legs": [
-      {"instrument-type": "Equity Option", "symbol": "SPY 240119P00450000", "action": "Buy to Close", "quantity": 1},
-      {"instrument-type": "Equity Option", "symbol": "SPY 240119P00445000", "action": "Sell to Close", "quantity": 1}
-    ]
-  }]
+  "time-in-force": "Day",
+  "order-type": "Limit",
+  "price": -0.50,
+  "price-effect": "Debit",
+  "legs": [
+    {"instrument-type": "Equity Option", "symbol": "SPY 240119P00450000", "action": "Buy to Close", "quantity": 1},
+    {"instrument-type": "Equity Option", "symbol": "SPY 240119P00445000", "action": "Sell to Close", "quantity": 1}
+  ]
 }
 ```
 
@@ -372,7 +351,7 @@ Check `status` field: `Received` → `Routed` → `Filled` / `Cancelled`
 
 ## Strategy-Specific Order Templates
 
-Use these templates as the starting point for each strategy's typical entry order. Substitute actual symbols, strikes, expiries, and prices. Always run `complex_order_dry_run` before submitting multi-leg orders; use `order_dry_run` only for single-leg simple orders.
+Use these templates as the starting point for each strategy's typical entry order. Substitute actual symbols, strikes, expiries, and prices. Always run `order_dry_run` before submitting spreads/straddles/strangles/condors/calendars (all multi-leg entries); use `complex_order_dry_run` only for OCO/OTOCO/OTO bracket types.
 
 ---
 
@@ -501,17 +480,14 @@ Use these templates as the starting point for each strategy's typical entry orde
 ### Pre-Earnings Expansion — Long ATM Straddle with 50%-of-debit stop
 ```json
 {
-  "type": "BLAST_ALL",
-  "orders": [{
-    "time-in-force": "Day",
-    "order-type": "Limit",
-    "price": -6.00,
-    "price-effect": "Debit",
-    "legs": [
-      {"instrument-type": "Equity Option", "symbol": "AAPL 240216C00185000", "action": "Buy to Open", "quantity": 1},
-      {"instrument-type": "Equity Option", "symbol": "AAPL 240216P00185000", "action": "Buy to Open", "quantity": 1}
-    ]
-  }]
+  "time-in-force": "Day",
+  "order-type": "Limit",
+  "price": -6.00,
+  "price-effect": "Debit",
+  "legs": [
+    {"instrument-type": "Equity Option", "symbol": "AAPL 240216C00185000", "action": "Buy to Open", "quantity": 1},
+    {"instrument-type": "Equity Option", "symbol": "AAPL 240216P00185000", "action": "Buy to Open", "quantity": 1}
+  ]
 }
 ```
 *After fill, place a GTC limit close order at 50% of debit paid (e.g., if debit = $6.00, close at $3.00). Pre-earnings straddles are debit structures — no OTOCO required, but the stop limit order must be placed immediately after fill.*
@@ -572,17 +548,14 @@ Same structure as VRP Short Straddle OTOCO above. Use next-day expiry for earnin
 ### Earnings Crush — Long Calendar (debit, GTC close on front-expiry day)
 ```json
 {
-  "type": "BLAST_ALL",
-  "orders": [{
-    "time-in-force": "Day",
-    "order-type": "Limit",
-    "price": -3.33,
-    "price-effect": "Debit",
-    "legs": [
-      {"instrument-type": "Equity Option", "symbol": "AAPL 240216C00185000", "action": "Buy to Open", "quantity": 1},
-      {"instrument-type": "Equity Option", "symbol": "AAPL 240119C00185000", "action": "Sell to Open", "quantity": 1}
-    ]
-  }]
+  "time-in-force": "Day",
+  "order-type": "Limit",
+  "price": -3.33,
+  "price-effect": "Debit",
+  "legs": [
+    {"instrument-type": "Equity Option", "symbol": "AAPL 240216C00185000", "action": "Buy to Open", "quantity": 1},
+    {"instrument-type": "Equity Option", "symbol": "AAPL 240119C00185000", "action": "Sell to Open", "quantity": 1}
+  ]
 }
 ```
 *After fill, set a GTC close order (sell the spread) on the front-expiry date. Close as a spread before close on expiry day to avoid pin risk.*
@@ -592,17 +565,14 @@ Same structure as VRP Short Straddle OTOCO above. Use next-day expiry for earnin
 ### Momentum Skew — Asymmetric Vertical Spread (debit, stop at 50% of debit)
 ```json
 {
-  "type": "BLAST_ALL",
-  "orders": [{
-    "time-in-force": "Day",
-    "order-type": "Limit",
-    "price": -0.90,
-    "price-effect": "Debit",
-    "legs": [
-      {"instrument-type": "Equity Option", "symbol": "AAPL 240119C00185000", "action": "Buy to Open", "quantity": 1},
-      {"instrument-type": "Equity Option", "symbol": "AAPL 240119C00195000", "action": "Sell to Open", "quantity": 1}
-    ]
-  }]
+  "time-in-force": "Day",
+  "order-type": "Limit",
+  "price": -0.90,
+  "price-effect": "Debit",
+  "legs": [
+    {"instrument-type": "Equity Option", "symbol": "AAPL 240119C00185000", "action": "Buy to Open", "quantity": 1},
+    {"instrument-type": "Equity Option", "symbol": "AAPL 240119C00195000", "action": "Sell to Open", "quantity": 1}
+  ]
 }
 ```
 *Debit structure — max loss is the debit paid. After fill, place a GTC close at 50% of debit as the stop (e.g., debit = $0.90 → close if spread value drops to $0.45). No OTOCO required.*
@@ -612,18 +582,15 @@ Same structure as VRP Short Straddle OTOCO above. Use next-day expiry for earnin
 ### Momentum Skew — 1-3-2 Ratio Fly
 ```json
 {
-  "type": "BLAST_ALL",
-  "orders": [{
-    "time-in-force": "Day",
-    "order-type": "Limit",
-    "price": -0.50,
-    "price-effect": "Debit",
-    "legs": [
-      {"instrument-type": "Equity Option", "symbol": "AAPL 240119C00185000", "action": "Buy to Open", "quantity": 1},
-      {"instrument-type": "Equity Option", "symbol": "AAPL 240119C00195000", "action": "Sell to Open", "quantity": 3},
-      {"instrument-type": "Equity Option", "symbol": "AAPL 240119C00200000", "action": "Buy to Open", "quantity": 2}
-    ]
-  }]
+  "time-in-force": "Day",
+  "order-type": "Limit",
+  "price": -0.50,
+  "price-effect": "Debit",
+  "legs": [
+    {"instrument-type": "Equity Option", "symbol": "AAPL 240119C00185000", "action": "Buy to Open", "quantity": 1},
+    {"instrument-type": "Equity Option", "symbol": "AAPL 240119C00195000", "action": "Sell to Open", "quantity": 3},
+    {"instrument-type": "Equity Option", "symbol": "AAPL 240119C00200000", "action": "Buy to Open", "quantity": 2}
+  ]
 }
 ```
 *Strike spacing: distance from leg 1 to leg 2 = 2× distance from leg 2 to leg 3. Debit structure. Max loss = debit paid; let expire if OTM.*
@@ -633,17 +600,14 @@ Same structure as VRP Short Straddle OTOCO above. Use next-day expiry for earnin
 ### Forward Factor — Calendar Spread (debit, limit only — no OTOCO)
 ```json
 {
-  "type": "BLAST_ALL",
-  "orders": [{
-    "time-in-force": "Day",
-    "order-type": "Limit",
-    "price": -1.20,
-    "price-effect": "Debit",
-    "legs": [
-      {"instrument-type": "Equity Option", "symbol": "UNG 240316C00012000", "action": "Buy to Open", "quantity": 1},
-      {"instrument-type": "Equity Option", "symbol": "UNG 240119C00012000", "action": "Sell to Open", "quantity": 1}
-    ]
-  }]
+  "time-in-force": "Day",
+  "order-type": "Limit",
+  "price": -1.20,
+  "price-effect": "Debit",
+  "legs": [
+    {"instrument-type": "Equity Option", "symbol": "UNG 240316C00012000", "action": "Buy to Open", "quantity": 1},
+    {"instrument-type": "Equity Option", "symbol": "UNG 240119C00012000", "action": "Sell to Open", "quantity": 1}
+  ]
 }
 ```
 *Limit orders only — never market. Work the order up 1–2 ticks at a time. Do not pay above the max debit calculated from the FF math. Hold to front-expiry day; no OTOCO bracket.*
@@ -707,17 +671,14 @@ Same structure as VRP Short Straddle OTOCO above. Use next-day expiry for earnin
 ### Supply and Demand Zones — Debit Spread into Momentum
 ```json
 {
-  "type": "BLAST_ALL",
-  "orders": [{
-    "time-in-force": "Day",
-    "order-type": "Limit",
-    "price": -1.20,
-    "price-effect": "Debit",
-    "legs": [
-      {"instrument-type": "Equity Option", "symbol": "SPY 240119C00455000", "action": "Buy to Open", "quantity": 1},
-      {"instrument-type": "Equity Option", "symbol": "SPY 240119C00462000", "action": "Sell to Open", "quantity": 1}
-    ]
-  }]
+  "time-in-force": "Day",
+  "order-type": "Limit",
+  "price": -1.20,
+  "price-effect": "Debit",
+  "legs": [
+    {"instrument-type": "Equity Option", "symbol": "SPY 240119C00455000", "action": "Buy to Open", "quantity": 1},
+    {"instrument-type": "Equity Option", "symbol": "SPY 240119C00462000", "action": "Sell to Open", "quantity": 1}
+  ]
 }
 ```
 *Debit structure. ATM long leg, OTM short leg in the departure direction. Max loss = debit paid.*
@@ -786,18 +747,19 @@ Same structure as VRP Short Straddle OTOCO above. Use next-day expiry for earnin
 
 ## Dry Run — Always Run First
 
-**Single-leg simple orders** (Limit, Market, Stop, Stop Limit, Notional Market):
+**Spreads, straddles, strangles, condors, calendars, and any other multi-leg entry** — use `order_dry_run`:
 ```
 order_dry_run(accountNumber, orderJson)
 ```
+Where `orderJson` is the flat order object (time-in-force, order-type, price, price-effect, legs array).
 
-**Multi-leg complex orders** (spreads, straddles, strangles, condors, calendars — including Net Debit / Net Credit):
+**Bracket orders only** (OCO / OTOCO / OTO) — use `complex_order_dry_run`:
 ```
 complex_order_dry_run(accountNumber, type, orders, trigger-order?)
 ```
-Where `type` is `"BLAST_ALL"`, `"OCO"`, or `"OTOCO"`, and `orders` is an array of order objects (each with `time-in-force`, `order-type`, `price`, `price-effect`, `legs`). For `OTOCO`, also supply `trigger-order`.
+Where `type` is `"OCO"`, `"OTOCO"`, or `"OTO"`. For `OTOCO`, also supply `trigger-order`.
 
-> Do NOT use `order_dry_run` for multi-leg or Net Debit / Net Credit orders — the API returns a 400 error. Always route multi-leg preflight through `complex_order_dry_run`.
+> Do NOT use `complex_order_dry_run` for spread/straddle/condor/calendar entries — those are not complex orders and must go through `order_dry_run`. `complex_order_dry_run` is strictly for OCO/OTOCO/OTO bracket types.
 
 Review the response for:
 - `buying-power-effect` — impact on available capital
